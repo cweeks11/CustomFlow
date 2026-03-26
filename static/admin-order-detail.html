@@ -1,0 +1,793 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Order Detail — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!--
+  PAGE: Admin Order Detail (admin-order-detail.html)
+  ============================================================
+  PURPOSE:
+    The full management view for a single order. This is where Buffy
+    does most of her daily work — updating status, logging payments,
+    uploading mockups, approving rush requests, and communicating notes.
+
+  HOW TO NAVIGATE HERE:
+    From admin-orders.html — click any row or the "Manage" button.
+    URL param: admin-order-detail.html?id=1047
+
+  WHAT'S ON THIS PAGE:
+    1. Hero — order header with pipeline bar and status dropdown
+    2. Rush approval section — only visible if rush is pending
+    3. Customer info + order details (2-column)
+    4. Payments table + "Log Payment" modal
+    5. Add-ons list + "Add Add-On" modal
+    6. Inbound tracking (customer → Buffy) — admin can override
+    7. Outbound tracking (Buffy → customer) — admin enters carrier + number
+    8. Base photo upload (drag/drop)
+    9. Customer reference photos (read-only gallery)
+   10. Mockup gallery + "Add Revision Note" modal
+   11. Revision history (free vs paid tracked)
+   12. Consult calls + "Schedule Consult" modal
+   13. Customer notes (read-only) + Admin notes (editable)
+   14. Status history timeline
+   15. Danger zone — quick status shortcuts
+
+  KEY FUNCTIONS:
+    render()         — rebuilds the entire page content from current state.
+                       Called after every mutation (status change, payment added, etc.)
+    updateStatus(val) — changes ORDER.status, appends to statusHist[], re-renders
+    approveRush()    — sets rush_approved on the current ORDER object
+    saveTracking()   — saves inbound or outbound tracking number
+    handleUpload()   — reads image files and adds them to mockupImgs[] or basePhoots[]
+    renderGallery()  — builds the thumbnail grid for any image array
+    openAddPayment() — dynamically creates and appends a payment modal to <body>
+    logPayment()     — pushes a new payment object to the payments[] array
+    openAddAddon()   — modal for adding an add-on service
+    openAddRevision() — modal for logging a revision (checks free vs paid threshold)
+    logRevision()    — pushes a new revision with correct charge_amount
+    openScheduleConsult() — modal for scheduling a consult call
+    saveNotes()      — saves admin notes back to ORDER.admin_notes
+    openLb() / closeLb() — lightbox for full-screen image viewing
+
+  BACKEND TODO:
+    render data      → GET /api/orders/:id (returns order + all related data)
+    updateStatus()   → PATCH /api/orders/:id  { status: 'painting' }
+    approveRush()    → PATCH /api/orders/:id  { rush_approved: true }
+    saveTracking()   → PATCH /api/orders/:id  { outbound_tracking: '...', outbound_carrier: '...' }
+    logPayment()     → POST /api/payments      { order_id, amount, type, method }
+    addAddon()       → POST /api/add_ons       { order_id, name, price, quantity }
+    logRevision()    → POST /api/revisions     { order_id, revision_number, notes, charge_amount }
+    saveConsult()    → POST /api/consult_calls { order_id, scheduled_at, duration_minutes, notes }
+    saveNotes()      → PATCH /api/orders/:id  { admin_notes: '...' }
+    image upload     → POST /api/order_images  (multipart form with file + type)
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+
+<div class="page">
+  <a href="admin-orders.html" class="back">← Back to Orders</a>
+  <div id="heroWrap"><div class="spin"></div></div>
+  <div id="mainContent" style="display:none;"></div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lb" id="lb" onclick="closeLb()">
+  <button class="lb-x" onclick="closeLb()">✕</button>
+  <img id="lbImg" src="" alt="" onclick="event.stopPropagation()"/>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  requireAdminAuth();
+  renderAdminNav('admin-orders.html');
+
+  const params = new URLSearchParams(location.search);
+  const OID = parseInt(params.get('id'));
+
+  // All state variables — populated by loadOrderDetail() below
+  let ORDER = {}, CUSTOMER = {}, USERS = {};
+  let custPhotos=[], basePhoots=[], mockupImgs=[];
+  let mockups=[], revisions=[], payments=[], addons=[], statusHist=[], consults=[];
+
+  // Load all order data from the real API
+  async function loadOrderDetail() {
+    if (!OID) { window.location.href = 'admin-orders.html'; return; }
+    const result = await apiFetch('/api/orders/' + OID);
+    if (!result || !result.ok) {
+      document.body.innerHTML = '<div style="padding:60px;text-align:center;color:#E74C3C;">Order #'+OID+' not found.</div>';
+      return;
+    }
+    const d = result.data;
+    ORDER      = d.order || {};
+    CUSTOMER   = d.customer || {};
+    USERS[CUSTOMER.id] = CUSTOMER;
+    custPhotos = (d.order_images||[]).filter(i=>i.type==='reference').map(i=>i.url||'').filter(Boolean);
+    basePhoots = (d.order_images||[]).filter(i=>i.type==='base_photo').map(i=>i.url||'').filter(Boolean);
+    mockupImgs = (d.order_images||[]).filter(i=>i.type==='mockup').map(i=>i.url||'').filter(Boolean);
+    mockups    = d.mockups || [];
+    revisions  = d.revisions || [];
+    payments   = d.payments || [];
+    addons     = d.add_ons || [];
+    statusHist = d.status_history || [];
+    consults   = d.consult_calls || [];
+    render();
+    renderInvoices();
+    renderGallery('refGal', custPhotos, false, 'ref');
+    renderGallery('baseGal', basePhoots, false, 'base');
+    renderGallery('mockupGal', mockupImgs, true, 'mockup');
+  }
+  loadOrderDetail().then(() => setupDropZonesAfterLoad());
+
+  const pip = ['free_waitlist','paid_waitlist','production_queue','prep','painting','completed','shipped','closed'];
+
+  function render() {
+    document.title = `Order #${ORDER.id} — ${CUSTOMER.name||''}`;
+
+    // HERO
+    const pidx = pip.indexOf(ORDER.status);
+    document.getElementById('heroWrap').innerHTML = `
+      <div class="card" style="margin-bottom:20px;padding:26px 28px;">
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:16px;">
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--txt-m);margin-bottom:5px;">Order #${ORDER.id}</div>
+            <div style="font-size:28px;font-weight:700;letter-spacing:1px;text-transform:uppercase;line-height:1;margin-bottom:10px;">${CUSTOMER.name||'—'}</div>
+            <div style="display:flex;gap:14px;flex-wrap:wrap;font-size:13px;color:var(--txt-m);">
+              <span>📦 ${ORDER.item_type}</span>
+              <span>🎨 ${ORDER.pricing_tier||'—'}</span>
+              <span>📅 ${formatDate(ORDER.created_at)}</span>
+              ${ORDER.must_have_by?`<span style="color:var(--warn);">⏰ Due ${formatDate(ORDER.must_have_by)}</span>`:''}
+              ${ORDER.is_rush?`<span style="color:var(--warn);font-weight:700;">⚡ RUSH${ORDER.rush_approved?' — Approved':' — PENDING APPROVAL'}</span>`:''}
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+            <div>
+              <div class="fl" style="margin-bottom:5px;">Status</div>
+              <select class="fc" id="statusSel" style="min-width:170px;" onchange="updateStatus(this.value)">
+                ${pip.map(s=>`<option value="${s}" ${ORDER.status===s?'selected':''}>${STATUSES[s].label}</option>`).join('')}
+              </select>
+            </div>
+            <div style="margin-top:18px;">${statusBadge(ORDER.status)}</div>
+          </div>
+        </div>
+        <!-- PIPELINE -->
+        <div class="pipeline" style="margin-top:18px;">
+          <div class="pip-track">
+            ${pip.map((s,i)=>`
+              <div style="display:flex;align-items:center;flex-shrink:0;">
+                <div class="pip-node ${i<pidx?'past':i===pidx?'active':'future'}">${STATUSES[s].label}</div>
+                ${i<pip.length-1?`<div class="pip-conn ${i<pidx?'past':'future'}"></div>`:''}
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>`;
+
+    document.getElementById('mainContent').style.display = 'block';
+    document.getElementById('mainContent').innerHTML = buildContent();
+
+    // Re-attach drag/drop
+    setupDropZone('mockupDrop','mockupFile', imgs => { mockupImgs.push(...imgs); renderGallery('mockupGal',mockupImgs,true,'mockup'); });
+    setupDropZone('baseDrop','baseFile', imgs => { basePhoots.push(...imgs); renderGallery('baseGal',basePhoots,false,'base'); });
+  }
+
+  function buildContent() {
+    const totalPaid = payments.reduce((s,p)=>s+(p.status==='paid'?parseFloat(p.amount):0),0);
+    const freeRevs  = 3;
+    const usedRevs  = revisions.length;
+    const paidRevs  = Math.max(0, usedRevs - freeRevs);
+
+    return `
+    <!-- ROW 1: Customer + Order Info -->
+    <div class="g2" style="margin-bottom:18px;">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Customer Info</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+          ${irow('Name', CUSTOMER.name||'—')}
+          ${irow('Email', CUSTOMER.email||'—')}
+          ${irow('Phone', CUSTOMER.phone||'—')}
+          ${irow('Member Since', formatDate(CUSTOMER.created_at))}
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Order Details</div></div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:14px;">
+          ${irow('Item Type', ORDER.item_type)}
+          ${irow('Pricing Tier', ORDER.pricing_tier||'—', true)}
+          ${irow('Must Have By', formatDate(ORDER.must_have_by)||'Not set')}
+          ${irow('Rush', ORDER.is_rush?(ORDER.rush_approved?'⚡ Approved':'⚡ Pending'):'No')}
+          ${ORDER.is_rush&&ORDER.rush_fee?irow('Rush Fee', formatCurrency(ORDER.rush_fee)):''}
+          ${irow('Booking Fee', ORDER.booking_fee_paid?'✔ Paid':'⚠ Unpaid', false, ORDER.booking_fee_paid?'var(--ok)':'var(--warn)')}
+        </div>
+      </div>
+    </div>
+
+    <!-- ROW 2: Rush Approval (if pending) -->
+    ${ORDER.is_rush && !ORDER.rush_approved ? `
+    <div style="margin-bottom:18px;padding:18px 20px;background:rgba(232,160,32,0.07);border:1px solid rgba(232,160,32,0.25);border-radius:10px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--warn);margin-bottom:12px;">⚡ Rush Request Pending Approval</div>
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:14px;">Rush fee is calculated as 50% of the custom fee. Approve only if schedule allows.</div>
+      <div style="display:flex;gap:10px;">
+        <button class="btn btn-mg" onclick="approveRush(true)">✔ Approve Rush</button>
+        <button class="btn btn-err" onclick="approveRush(false)">✕ Deny Rush Request</button>
+      </div>
+    </div>` : ''}
+
+    <!-- ROW 3: Payments + Add-Ons -->
+    <div class="g2" style="margin-bottom:18px;">
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><span class="card-dot" style="background:var(--ok);"></span>Payments</div>
+          <button class="btn btn-out btn-sm" onclick="openAddPayment()">+ Add Payment</button>
+        </div>
+        <table style="width:100%;font-size:13px;">
+          <thead><tr>
+            <th style="padding:8px 0;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-m);border-bottom:1px solid var(--b1);">Type</th>
+            <th style="padding:8px 0;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-m);border-bottom:1px solid var(--b1);">Amount</th>
+            <th style="padding:8px 0;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-m);border-bottom:1px solid var(--b1);">Method</th>
+            <th style="padding:8px 0;font-size:10px;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-m);border-bottom:1px solid var(--b1);">Status</th>
+          </tr></thead>
+          <tbody>
+            ${payments.map(p=>`<tr>
+              <td style="padding:9px 0;color:var(--txt-m);text-transform:capitalize;border-bottom:1px solid var(--b1);">${p.type}</td>
+              <td style="padding:9px 0;color:var(--gld);font-weight:700;border-bottom:1px solid var(--b1);">${formatCurrency(p.amount)}</td>
+              <td style="padding:9px 0;color:var(--txt-m);border-bottom:1px solid var(--b1);">${p.method||'—'}</td>
+              <td style="padding:9px 0;border-bottom:1px solid var(--b1);"><span style="color:${p.status==='paid'?'var(--ok)':'var(--warn)'};">${p.status}</span></td>
+            </tr>`).join('')}
+            <tr><td colspan="4" style="padding-top:10px;font-size:12px;color:var(--txt-m);">Total Paid: <strong style="color:var(--ok);">${formatCurrency(totalPaid)}</strong></td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="card">
+        <div class="card-head">
+          <div class="card-title"><span class="card-dot" style="background:var(--vio-l);"></span>Add-Ons</div>
+          <button class="btn btn-out btn-sm" onclick="openAddAddon()">+ Add</button>
+        </div>
+        ${addons.length ? addons.map(a=>`
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px;">
+            <span style="color:var(--txt);">${a.name}</span>
+            <span style="color:var(--gld);">${formatCurrency(a.price)} × ${a.quantity}</span>
+          </div>`).join('') : '<div style="font-size:13px;color:var(--txt-d);padding:8px 0;">No add-ons selected.</div>'}
+      </div>
+    </div>
+
+    <!-- ROW 4: Tracking -->
+    <div class="g2" style="margin-bottom:18px;">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Inbound Tracking <span style="font-size:10px;color:var(--txt-d);font-weight:400;letter-spacing:1px;text-transform:none;"> — Customer → Buffy</span></div></div>
+        <div style="background:var(--blk);border:1px solid var(--b1);border-radius:7px;padding:16px;margin-bottom:12px;">
+          <div class="fl">Tracking #</div>
+          <div class="track-num ${ORDER.inbound_tracking?'':'empty'}" id="inboundDisp">${ORDER.inbound_tracking||'Not yet provided'}</div>
+          ${ORDER.inbound_carrier?`<div style="font-size:11px;color:var(--txt-d);margin-top:3px;">${ORDER.inbound_carrier}</div>`:''}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" class="fc" id="inboundIn" placeholder="Enter or override tracking #" value="${ORDER.inbound_tracking||''}" style="flex:1;min-width:150px;letter-spacing:1.5px;"/>
+          <button class="btn btn-ghost btn-sm" onclick="saveTracking('inbound')">Save</button>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="card-dot"></span>Outbound Tracking <span style="font-size:10px;color:var(--txt-d);font-weight:400;letter-spacing:1px;text-transform:none;"> — Buffy → Customer</span></div></div>
+        <div style="background:var(--blk);border:1px solid var(--b1);border-radius:7px;padding:16px;margin-bottom:12px;">
+          <div class="fl">Tracking #</div>
+          <div class="track-num ${ORDER.outbound_tracking?'':'empty'}" id="outboundDisp">${ORDER.outbound_tracking||'Not yet entered'}</div>
+          ${ORDER.outbound_carrier?`<div style="font-size:11px;color:var(--txt-d);margin-top:3px;">${ORDER.outbound_carrier}</div>`:''}
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <input type="text" class="fc" id="outboundIn" placeholder="Enter outbound tracking #" value="${ORDER.outbound_tracking||''}" style="flex:1;min-width:120px;letter-spacing:1.5px;"/>
+          <select class="fc" id="carrierSel" style="width:auto;min-width:100px;">
+            <option value="">Carrier</option>
+            ${['USPS','UPS','FedEx','DHL'].map(c=>`<option ${(ORDER.outbound_carrier||'')==c?'selected':''}>${c}</option>`).join('')}
+          </select>
+          <button class="btn btn-mg btn-sm" onclick="saveTracking('outbound')">Save & Notify</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ROW 5: Images — Base Photo + Reference -->
+    <div class="g2" style="margin-bottom:18px;">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Base Photo <span style="font-size:10px;color:var(--txt-d);font-weight:400;text-transform:none;"> — item as received</span></div></div>
+        <div class="drop-zone" id="baseDrop" style="margin-bottom:8px;">
+          <input type="file" id="baseFile" accept="image/*" multiple onchange="handleUpload(event,'base')"/>
+          <div style="font-size:20px;opacity:0.3;margin-bottom:6px;">📷</div>
+          <div class="drop-txt">Upload base photo</div>
+          <div class="drop-sub">Photo of item as received before work begins</div>
+        </div>
+        <div class="gallery" id="baseGal"><div class="gmt">No base photo yet.</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Customer Reference Photos</div></div>
+        <div class="gallery" id="refGal"><div class="gmt">No reference photos from customer.</div></div>
+      </div>
+    </div>
+
+    <!-- ROW 6: Mockups + Revisions -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-head">
+        <div class="card-title"><span class="card-dot"></span>Design Mockups & Revisions
+          <span style="font-size:11px;font-weight:400;color:var(--txt-m);text-transform:none;letter-spacing:0;">
+            — ${usedRevs}/${freeRevs} free revisions used${paidRevs>0?` + ${paidRevs} paid`:''}
+          </span>
+        </div>
+        <button class="btn btn-out btn-sm" onclick="openAddRevision()">+ Add Revision Note</button>
+      </div>
+      <div class="drop-zone" id="mockupDrop" style="margin-bottom:14px;">
+        <input type="file" id="mockupFile" accept="image/*" multiple onchange="handleUpload(event,'mockup')"/>
+        <div style="font-size:20px;opacity:0.3;margin-bottom:6px;">🎨</div>
+        <div class="drop-txt">Upload mockup / design preview</div>
+        <div class="drop-sub">PNG, JPG — drag & drop or click</div>
+      </div>
+      <div class="gallery" id="mockupGal"><div class="gmt">No mockups uploaded yet.</div></div>
+      ${revisions.length ? `
+        <div style="margin-top:16px;border-top:1px solid var(--b1);padding-top:14px;">
+          <div class="fl" style="margin-bottom:10px;">Revision History</div>
+          ${revisions.map(r=>`
+            <div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px;">
+              <div style="width:24px;height:24px;border-radius:50%;background:${r.revision_number<=freeRevs?'rgba(46,204,113,0.1)':'rgba(232,160,32,0.1)'};color:${r.revision_number<=freeRevs?'var(--ok)':'var(--warn)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">R${r.revision_number}</div>
+              <div style="flex:1;color:var(--txt-m);">${r.notes||'—'}</div>
+              <div style="color:${r.charge_amount?'var(--warn)':'var(--txt-d)'};white-space:nowrap;font-size:11px;">${r.charge_amount?formatCurrency(r.charge_amount)+' fee':'Free'}</div>
+              <div style="color:var(--txt-d);font-size:11px;white-space:nowrap;">${formatDate(r.created_at)}</div>
+            </div>`).join('')}
+        </div>` : ''}
+    </div>
+
+    <!-- ROW 7: Consult Calls -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-head">
+        <div class="card-title"><span class="card-dot" style="background:var(--vio-l);"></span>Consult Calls</div>
+        <button class="btn btn-out btn-sm" onclick="openScheduleConsult()">+ Schedule Consult</button>
+      </div>
+      ${consults.length ? consults.map(c=>`
+        <div style="display:flex;gap:14px;align-items:flex-start;padding:12px 0;border-bottom:1px solid var(--b1);font-size:13px;">
+          <div style="font-size:20px;opacity:0.5;">📞</div>
+          <div>
+            <div style="font-weight:600;color:var(--txt);">${formatDatetime(c.scheduled_at)} · ${c.duration_minutes} min</div>
+            <div style="color:var(--txt-m);margin-top:3px;font-family:var(--fb);font-style:italic;font-size:15px;">${c.notes||'—'}</div>
+          </div>
+        </div>`).join('') : '<div style="font-size:13px;color:var(--txt-d);">No consult calls scheduled.</div>'}
+    </div>
+
+
+    <!-- ROW 7b: INVOICES -->
+    <div class="card" style="margin-bottom:18px;" id="invoicesCard">
+      <div class="card-head">
+        <div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Invoices
+          <span style="font-size:10px;font-weight:400;color:var(--txt-d);text-transform:none;letter-spacing:0;"> — upload PDFs and send to customer</span>
+        </div>
+      </div>
+      <div id="invoicesList"></div>
+    </div>
+
+    <!-- ROW 8: Notes + Status History -->
+    <div class="g2" style="margin-bottom:18px;">
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Customer Notes</div></div>
+        <div style="font-family:var(--fb);font-style:italic;font-size:16px;color:var(--txt-m);line-height:1.7;">"${ORDER.customer_notes||'No notes from customer.'}"</div>
+      </div>
+      <div class="card">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Admin Notes</div></div>
+        <textarea class="fc" id="adminNotesTA" rows="4" placeholder="Internal notes...">${ORDER.admin_notes||''}</textarea>
+        <div style="display:flex;gap:10px;align-items:center;margin-top:10px;">
+          <button class="btn btn-gld btn-sm" onclick="saveNotes()">Save Notes</button>
+          <span id="notesSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- STATUS HISTORY -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Status History</div></div>
+      ${statusHist.length ? statusHist.map(h=>`
+        <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px;">
+          <div style="width:6px;height:6px;border-radius:50%;background:var(--mg);flex-shrink:0;margin-top:5px;"></div>
+          <div>
+            <span style="color:var(--txt-m);">${STATUSES[h.from_status]?.label||h.from_status} →</span>
+            <strong> ${STATUSES[h.to_status]?.label||h.to_status}</strong>
+            ${h.note?`<div style="font-size:12px;color:var(--txt-m);margin-top:2px;">${h.note}</div>`:''}
+          </div>
+          <div style="margin-left:auto;font-size:11px;color:var(--txt-d);white-space:nowrap;">${formatDate(h.changed_at)}</div>
+        </div>`).join('') : '<div style="font-size:13px;color:var(--txt-d);">No status history yet.</div>'}
+    </div>
+
+    <!-- DANGER ZONE -->
+    <div class="card" style="border-color:rgba(231,76,60,0.2);">
+      <div class="card-head"><div class="card-title" style="color:var(--err);">⚠ Actions</div></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <button class="btn btn-out btn-sm" onclick="setStatus('completed')">✔ Mark Completed</button>
+        <button class="btn btn-out btn-sm" onclick="setStatus('shipped')">📦 Mark Shipped</button>
+        <button class="btn btn-out btn-sm" onclick="setStatus('closed')">🔒 Close Order</button>
+        <button class="btn btn-err btn-sm" onclick="setStatus('cancelled')">✕ Cancel Order</button>
+      </div>
+    </div>`;
+  }
+
+  // ---- INVOICE DEFINITIONS ----
+  // All 5 possible invoice types. Each slot only renders if conditions are met:
+  //   rush    — only shown if order is_rush && rush_approved
+  //   cleaning — only shown if order has cleaning fee (admin manually flags)
+  // The others always show for every order.
+  const INVOICE_TYPES = [
+    { type:'booking',  label:'Booking Fee Invoice',    amount: 50,              always: true  },
+    { type:'custom',   label:'Custom Fee Invoice',     amount: null,            always: true  },
+    { type:'rush',     label:'Rush Fee Invoice',       amount: ORDER.rush_fee,  always: false, condition: () => ORDER.is_rush && ORDER.rush_approved },
+    { type:'cleaning', label:'Cleaning Fee Invoice',   amount: 25,              always: false, condition: () => ORDER.has_cleaning_fee },
+    { type:'final',    label:'Final Balance Invoice',  amount: null,            always: true  },
+  ];
+
+  // renderInvoices() — builds the invoice upload panel showing all applicable
+  // invoice slots for this order. Each slot shows:
+  //   - Invoice type label and amount (if fixed)
+  //   - Upload status: pending / uploaded / sent
+  //   - Upload button (if not yet uploaded)
+  //   - "Send to Customer" button (if uploaded but not yet sent)
+  //   - Sent confirmation with timestamp (if already sent)
+  function renderInvoices() {
+    // Load invoices from real API
+    let existingInvoices = detail.invoices || [];
+    const existing = existingInvoices;
+    const applicable = INVOICE_TYPES.filter(t => t.always || (t.condition && t.condition()));
+
+    document.getElementById('invoicesList').innerHTML = applicable.map(def => {
+      const inv = existing.find(i => i.type === def.type);
+      const statusIcon  = inv ? (inv.status === 'sent' ? '✔ Sent' : '⬆ Uploaded — not sent') : '○ Not uploaded';
+      const statusColor = inv ? (inv.status === 'sent' ? 'var(--ok)' : 'var(--warn)') : 'var(--txt-d)';
+
+      return `
+        <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--b1);flex-wrap:wrap;" id="inv_${def.type}">
+          <!-- Type label + amount -->
+          <div style="flex:1;min-width:180px;">
+            <div style="font-size:13px;font-weight:700;color:var(--txt);">${def.label}</div>
+            <div style="font-size:12px;color:var(--txt-m);">
+              ${def.amount ? formatCurrency(def.amount) : 'Amount varies — enter when uploading'}
+            </div>
+          </div>
+
+          <!-- Upload status -->
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${statusColor};">
+            ${statusIcon}
+            ${inv && inv.sent_at ? `<span style="font-weight:400;text-transform:none;font-size:10px;color:var(--txt-d);"> · ${formatDate(inv.sent_at)}</span>` : ''}
+          </div>
+
+          <!-- Actions -->
+          <div style="display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;">
+            ${!inv ? `
+              <!-- Upload button — triggers hidden file input -->
+              <label class="btn btn-out btn-sm" style="cursor:pointer;">
+                ⬆ Upload PDF
+                <input type="file" accept="application/pdf" style="display:none;"
+                  onchange="handleInvoiceUpload(event,'${def.type}','${def.label}',${def.amount || 0})"/>
+              </label>` : ''}
+            ${inv && inv.status === 'uploaded' ? `
+              <!-- Send button — marks as sent and triggers email to customer -->
+              <button class="btn btn-gld btn-sm" onclick="sendInvoice('${def.type}')">
+                📧 Send to Customer
+              </button>` : ''}
+            ${inv && inv.file_url ? `
+              <!-- Download link — opens the uploaded PDF -->
+              <a href="${inv ? inv.file_url : '#'}" target="_blank" class="btn btn-ghost btn-sm">
+                ↓ Download
+              </a>` : ''}
+            ${inv ? `
+              <!-- Re-upload option to replace the existing PDF -->
+              <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
+                ↺ Replace
+                <input type="file" accept="application/pdf" style="display:none;"
+                  onchange="handleInvoiceUpload(event,'${def.type}','${def.label}',${def.amount || 0})"/>
+              </label>` : ''}
+          </div>
+        </div>`;
+    }).join('') + `
+      <div style="margin-top:12px;padding:10px 12px;background:rgba(216,188,132,0.06);border:1px solid rgba(216,188,132,0.12);border-radius:6px;font-size:12px;color:var(--txt-m);">
+        💡 Sending an invoice emails the PDF to the customer and shows a download link in their portal.
+        <span style="color:var(--txt-d);">Email delivery requires the Flask backend + SendGrid.</span>
+      </div>`;
+  }
+
+  // handleInvoiceUpload() — reads the uploaded PDF file, stores it in window._invoices = window._invoices ||[];
+    window._invoices,
+  // and re-renders the invoice panel.
+  // In production: POST multipart form to /api/orders/:id/invoices
+  function handleInvoiceUpload(event, type, label, amount) {
+    const file = event.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      // Remove any existing invoice of this type for this order
+      // Note: in production, POST /api/orders/:id/invoices with the PDF
+      // For now we track in memory
+      if (!window._invoices) window._invoices = [];
+      const idx = window._invoices.findIndex(i => i.order_id === OID && i.type === type);
+      const newInv = {
+        id: Date.now(), order_id: OID, type, label,
+        amount: amount || 0,
+        status: 'uploaded',
+        uploaded_at: new Date().toISOString(),
+        sent_at: null,
+        file_url: e.target.result, // base64 data URL in mock; real URL from S3/Cloudinary in production
+      };
+      if (idx >= 0) window._invoices[idx] = newInv;
+      else window._invoices.push(newInv);
+      renderInvoices();
+      showToast(`${label} uploaded! Click "Send to Customer" to email it.`);
+    };
+    reader.readAsDataURL(file);
+    event.target.value = '';
+  }
+
+  // sendInvoice() — marks the invoice as sent and triggers the email.
+  // In production: POST /api/invoices/:id/send
+  // Flask will attach the PDF and send via SendGrid using buildInvoiceEmailHtml()
+  function sendInvoice(type) {
+    const inv = (window._invoices || []).find(i => i.order_id === OID && i.type === type);
+    if (!inv) return;
+    if (!confirm(`Send "${inv.label}" to ${CUSTOMER.name || 'customer'} at ${CUSTOMER.email}?`)) return;
+
+    // Mark as sent in mock data
+    inv.status = 'sent';
+    inv.sent_at = new Date().toISOString();
+
+    // =====================================================
+    // BACKEND TODO — send invoice email via Flask + SendGrid
+    // =====================================================
+    // await apiFetch('/api/invoices/' + inv.id + '/send', { method: 'POST' })
+    //
+    // Flask will:
+    //   1. Fetch the invoice PDF from storage
+    //   2. Build the email HTML using buildInvoiceEmailHtml()
+    //   3. Attach the PDF and send via SendGrid
+    //   4. Mark invoice.status = 'sent' in the database
+    // =====================================================
+
+    renderInvoices();
+    showToast(`Invoice sent to ${CUSTOMER.email || 'customer'}! 📧`);
+  }
+
+  // Helper
+  function irow(label, val, cap=false, color='') {
+    return `<div><div class="fl">${label}</div><div style="font-size:14px;${cap?'text-transform:capitalize;':''}${color?`color:${color};`:''}">${val}</div></div>`;
+  }
+
+  function renderGallery(id, imgs, allowDel, type) {
+    const el = document.getElementById(id);
+    if(!el) return;
+    if(!imgs.length) { el.innerHTML=`<div class="gmt">No images yet.</div>`; return; }
+    el.innerHTML = imgs.map((src,i)=>`
+      <div class="gthumb">
+        <img src="${src||'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%231F1F1F%22 width=%22100%22 height=%22100%22/%3E%3Ctext fill=%22%23444%22 x=%2250%22 y=%2255%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo image%3C/text%3E%3C/svg%3E'}" onclick="openLb(this.src)"/>
+        ${allowDel?`<button class="gdel" onclick="delImg('${type}',${i})">✕</button>`:''}
+      </div>`).join('');
+  }
+
+  function handleUpload(e, type) {
+    Array.from(e.target.files).forEach(f=>{
+      const r=new FileReader();
+      r.onload=ev=>{
+        if(type==='mockup') { mockupImgs.push(ev.target.result); renderGallery('mockupGal',mockupImgs,true,'mockup'); }
+        else                { basePhoots.push(ev.target.result); renderGallery('baseGal',basePhoots,false,'base'); }
+        showToast('Image uploaded!');
+      };
+      r.readAsDataURL(f);
+    });
+    e.target.value='';
+  }
+
+  function delImg(type, i) {
+    if(!confirm('Remove this image?')) return;
+    if(type==='mockup') { mockupImgs.splice(i,1); renderGallery('mockupGal',mockupImgs,true,'mockup'); }
+  }
+
+  function setupDropZone(zoneId, inputId, cb) {
+    const zone=document.getElementById(zoneId);
+    if(!zone) return;
+    zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('over');});
+    zone.addEventListener('dragleave',()=>zone.classList.remove('over'));
+    zone.addEventListener('drop',e=>{
+      e.preventDefault(); zone.classList.remove('over');
+      const imgs=[]; let done=0;
+      const files=Array.from(e.dataTransfer.files).filter(f=>f.type.startsWith('image/'));
+      if(!files.length) return;
+      files.forEach(f=>{
+        const r=new FileReader();
+        r.onload=ev=>{ imgs.push(ev.target.result); if(++done===files.length) cb(imgs); };
+        r.readAsDataURL(f);
+      });
+    });
+  }
+
+  async function updateStatus(val) {
+    const oldStatus = ORDER.status;
+    const res = await apiFetch('/api/orders/' + OID, {
+      method: 'PATCH',
+      body: JSON.stringify({ status: val, note: 'Status updated by admin' })
+    });
+    if (!res || !res.ok) { showToast('Failed to update status', 'error'); return; }
+    ORDER.status = val;
+    statusHist.push({ id:Date.now(), order_id:OID, from_status:oldStatus, to_status:val, changed_at:new Date().toISOString(), note:'Updated by admin' });
+    render();
+    renderInvoices();
+    showToast('Status → ' + (STATUSES[val]?.label||val));
+  }
+
+  function setStatus(val) {
+    if(!confirm(`Change status to "${STATUSES[val]?.label||val}"?`)) return;
+    document.getElementById('statusSel').value=val;
+    updateStatus(val);
+  }
+
+  async function approveRush(approved) {
+    const res = await apiFetch('/api/orders/' + OID, {
+      method: 'PATCH',
+      body: JSON.stringify({ rush_approved: approved, is_rush: approved ? ORDER.is_rush : false })
+    });
+    if (!res || !res.ok) { showToast('Failed to update rush status', 'error'); return; }
+    ORDER.rush_approved=approved;
+    if(!approved) ORDER.is_rush=false;
+    render();
+    showToast(approved?'⚡ Rush approved!':'Rush denied.');
+  }
+
+  async function saveTracking(dir) {
+    if(dir==='inbound') {
+      const v=document.getElementById('inboundIn').value.trim();
+      if(!v){showToast('Enter tracking number first.','warning');return;}
+      const r = await apiFetch('/api/orders/'+OID, { method:'PATCH', body:JSON.stringify({inbound_tracking:v}) });
+      if(r&&r.ok){ORDER.inbound_tracking=v; showToast('Inbound tracking saved!'); render();}
+      else showToast('Save failed','error');
+    } else {
+      const v=document.getElementById('outboundIn').value.trim();
+      const c=document.getElementById('carrierSel').value;
+      if(!v){showToast('Enter tracking number first.','warning');return;}
+      const r = await apiFetch('/api/orders/'+OID, { method:'PATCH', body:JSON.stringify({outbound_tracking:v,outbound_carrier:c}) });
+      if(r&&r.ok){ORDER.outbound_tracking=v; ORDER.outbound_carrier=c; showToast('Outbound tracking saved!'); render();}
+      else showToast('Save failed','error');
+    }
+  }
+
+  async function saveNotes() {
+    const notes = document.getElementById('adminNotesTA').value;
+    const r = await apiFetch('/api/orders/'+OID, { method:'PATCH', body:JSON.stringify({admin_notes:notes}) });
+    const el=document.getElementById('notesSv');
+    if(r&&r.ok){ORDER.admin_notes=notes; el.style.display='inline'; setTimeout(()=>el.style.display='none',3000); showToast('Notes saved!');}
+    else showToast('Save failed','error');
+  }
+
+  function openAddPayment() {
+    const types=['booking','custom','rush','cleaning','revision','addon'];
+    const methods=['Zelle','Venmo','CashApp','PayPal','Other'];
+    const modal=document.createElement('div'); modal.className='overlay open'; modal.id='payModal';
+    modal.innerHTML=`<div class="modal">
+      <button class="modal-x" onclick="document.getElementById('payModal').remove()">✕</button>
+      <div class="modal-title">Log Payment</div>
+      <div class="fg"><label class="fl">Type</label><select class="fc" id="payType">${types.map(t=>`<option value="${t}" style="text-transform:capitalize;">${t}</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl">Amount</label><input type="number" class="fc" id="payAmt" placeholder="0.00" min="0" step="0.01"/></div>
+      <div class="fg"><label class="fl">Method</label><select class="fc" id="payMethod">${methods.map(m=>`<option>${m}</option>`).join('')}</select></div>
+      <div class="fg"><label class="fl">External Transaction ID (optional)</label><input type="text" class="fc" id="payTxn" placeholder="Zelle confirmation #, etc."/></div>
+      <button class="btn btn-mg" style="width:100%;justify-content:center;margin-top:8px;" onclick="logPayment()">Log Payment</button>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+
+  async function logPayment() {
+    const amt=parseFloat(document.getElementById('payAmt').value);
+    if(!amt){showToast('Enter a valid amount.','warning');return;}
+    const r = await apiFetch('/api/payments', { method:'POST', body:JSON.stringify({
+      order_id:OID, amount:amt,
+      type:document.getElementById('payType').value,
+      method:document.getElementById('payMethod').value,
+      status:'paid',
+      external_txn_id:document.getElementById('payTxn').value||''
+    })});
+    if(r&&r.ok){
+      payments.push(r.data.payment);
+      document.getElementById('payModal').remove();
+      render(); showToast('Payment logged!');
+    } else showToast('Failed to log payment','error');
+  }
+
+  function openAddAddon() {
+    const modal=document.createElement('div'); modal.className='overlay open'; modal.id='addonModal';
+    modal.innerHTML=`<div class="modal">
+      <button class="modal-x" onclick="document.getElementById('addonModal').remove()">✕</button>
+      <div class="modal-title">Add Add-On Service</div>
+      <div class="fg"><label class="fl">Service Name</label>
+        <select class="fc" id="addonName">
+          <option>AI Product Photography ($35)</option>
+          <option>Rush Processing</option>
+          <option>Extra Revision ($20)</option>
+          <option>Cleaning Fee ($25)</option>
+          <option>Custom Add-On</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">Price</label><input type="number" class="fc" id="addonPrice" placeholder="35.00" min="0" step="0.01"/></div>
+      <div class="fg"><label class="fl">Quantity</label><input type="number" class="fc" id="addonQty" value="1" min="1"/></div>
+      <button class="btn btn-mg" style="width:100%;justify-content:center;margin-top:8px;" onclick="addAddon()">Add</button>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+
+  async function addAddon() {
+    const r = await apiFetch('/api/add_ons', { method:'POST', body:JSON.stringify({
+      order_id:OID,
+      name:document.getElementById('addonName').value,
+      price:parseFloat(document.getElementById('addonPrice').value)||0,
+      quantity:parseInt(document.getElementById('addonQty').value)||1
+    })});
+    if(r&&r.ok){
+      addons.push(r.data.add_on);
+      document.getElementById('addonModal').remove();
+      render(); showToast('Add-on added!');
+    } else showToast('Failed to add add-on','error');
+  }
+
+  function openAddRevision() {
+    const usedRevs=revisions.length, freeRevs=3;
+    const isPaid=usedRevs>=freeRevs;
+    const modal=document.createElement('div'); modal.className='overlay open'; modal.id='revModal';
+    modal.innerHTML=`<div class="modal">
+      <button class="modal-x" onclick="document.getElementById('revModal').remove()">✕</button>
+      <div class="modal-title">Add Revision Note</div>
+      ${isPaid?`<div style="padding:10px 12px;background:rgba(232,160,32,0.1);border:1px solid rgba(232,160,32,0.25);border-radius:6px;font-size:12px;color:var(--warn);margin-bottom:16px;">This revision (${usedRevs+1}) exceeds the 3 free included — a charge will apply.</div>`:''}
+      <div class="fg"><label class="fl">Revision Notes</label><textarea class="fc" id="revNotes" rows="4" placeholder="Describe what changes are needed..."></textarea></div>
+      ${isPaid?`<div class="fg"><label class="fl">Charge Amount</label><input type="number" class="fc" id="revCharge" placeholder="20.00" value="20" min="0" step="0.01"/></div>`:''}
+      <button class="btn btn-mg" style="width:100%;justify-content:center;margin-top:8px;" onclick="logRevision()">Save Revision</button>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+
+  async function logRevision() {
+    const r = await apiFetch('/api/revisions', { method:'POST', body:JSON.stringify({
+      order_id:OID,
+      notes:document.getElementById('revNotes').value,
+    })});
+    if(r&&r.ok){
+      revisions.push(r.data.revision);
+      document.getElementById('revModal').remove();
+      render(); showToast('Revision #'+revisions.length+' logged!');
+    } else showToast('Failed to log revision','error');
+  }
+
+  function openScheduleConsult() {
+    const modal=document.createElement('div'); modal.className='overlay open'; modal.id='consultModal';
+    modal.innerHTML=`<div class="modal">
+      <button class="modal-x" onclick="document.getElementById('consultModal').remove()">✕</button>
+      <div class="modal-title">Schedule Consult Call</div>
+      <div class="fg"><label class="fl">Date & Time</label><input type="datetime-local" class="fc" id="consultDt"/></div>
+      <div class="fg"><label class="fl">Duration (minutes)</label><select class="fc" id="consultDur"><option value="15">15 min</option><option value="30" selected>30 min</option><option value="45">45 min</option><option value="60">60 min</option></select></div>
+      <div class="fg"><label class="fl">Call Topic / Notes</label><textarea class="fc" id="consultNotes" rows="3" placeholder="What will you discuss?"></textarea></div>
+      <button class="btn btn-mg" style="width:100%;justify-content:center;margin-top:8px;" onclick="saveConsult()">Schedule</button>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+
+  async function saveConsult() {
+    const dt=document.getElementById('consultDt').value;
+    if(!dt){showToast('Select a date and time.','warning');return;}
+    const r = await apiFetch('/api/consult_calls', { method:'POST', body:JSON.stringify({
+      order_id:OID,
+      scheduled_at:new Date(dt).toISOString(),
+      duration_minutes:parseInt(document.getElementById('consultDur').value),
+      notes:document.getElementById('consultNotes').value
+    })});
+    if(r&&r.ok){
+      consults.push(r.data.consult_call);
+      document.getElementById('consultModal').remove();
+      render(); showToast('Consult scheduled!');
+    } else showToast('Failed to schedule consult','error');
+  }
+
+  function openLb(src) { document.getElementById('lbImg').src=src; document.getElementById('lb').classList.add('open'); }
+  function closeLb()   { document.getElementById('lb').classList.remove('open'); }
+  document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeLb(); });
+
+  // Init — loadOrderDetail() handles all rendering after data loads
+  // Drop zones set up after render() is called inside loadOrderDetail
+  function setupDropZonesAfterLoad() {
+    setupDropZone('mockupDrop','mockupFile', imgs => { mockupImgs.push(...imgs); renderGallery('mockupGal',mockupImgs,true,'mockup'); });
+    setupDropZone('baseDrop','baseFile', imgs => { basePhoots.push(...imgs); renderGallery('baseGal',basePhoots,false,'base'); });
+  }
+</script>
+</body>
+</html>

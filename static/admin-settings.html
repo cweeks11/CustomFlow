@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Settings — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!--
+  PAGE: Admin Settings (admin-settings.html)
+  ============================================================
+  PURPOSE:
+    Store configuration and preferences for Buffy. The most important
+    section is Booking & Availability — this controls what customers
+    see on the public landing page about Buffy's availability.
+
+  WHAT'S ON THIS PAGE (accordion sections):
+    1. General Settings    — business name, contact info, timezone
+    2. Booking & Availability — booking status, booked-until date,
+                                production start date, banner message
+                                (saves to localStorage, read by landing.html)
+    3. User Management     — add/remove admin and employee accounts
+    4. Notification Settings — toggle email/SMS notification types
+    5. FAQ Management      — edit, add, remove FAQ items (saves to MOCK.faqs)
+    6. Pricing Tiers       — display-only view of pricing (edit in core.js)
+
+  KEY FUNCTIONS:
+    toggleAcc(head)   — opens/closes accordion sections, ensures only one
+                        is open at a time
+    buildBooking(el)  — renders the booking form, pre-fills from localStorage
+    saveBooking()     — saves booking status values to localStorage so
+                        landing.html and customer-terms.html update immediately
+    buildFaqs(el)     — renders editable FAQ list from MOCK.faqs
+    renderFaqEdit()   — re-renders the FAQ edit list after add/remove
+    saveFaqs()        — writes edited FAQs back to MOCK.faqs
+    buildUsers(el)    — renders admin/employee user table
+    openAddUser()     — modal for creating a new admin user
+
+  IMPORTANT — BOOKING STATUS FLOW:
+    Admin changes status here → saved to localStorage →
+    getBookingStatus() in core.js reads it →
+    landing.html banner updates automatically on next load
+    In production: also save to a settings table via PATCH /api/settings/booking
+
+  BACKEND TODO:
+    saveBooking()  → PATCH /api/settings/booking
+    saveFaqs()     → PUT /api/faqs (array of {q, a} objects)
+    addUser()      → POST /api/users  { name, email, role, password }
+    removeUser()   → DELETE /api/users/:id
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+
+<div class="page">
+  <div class="page-head">
+    <div><div class="page-title">Settings</div><div class="page-sub">Store configuration and preferences</div></div>
+  </div>
+
+  <div id="accWrap"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+
+  requireAdminAuth();
+  renderAdminNav('admin-settings.html');
+
+  // Build accordions
+  const sections = [
+    { id:'general',  icon:'⚙️', label:'General Settings',     fn:buildGeneral  },
+    { id:'booking',  icon:'📅', label:'Booking & Availability',fn:buildBooking  },
+    { id:'users',    icon:'👥', label:'User Management',       fn:buildUsers    },
+    { id:'notifs',   icon:'🔔', label:'Notification Settings', fn:buildNotifs   },
+    { id:'faqs',     icon:'❓', label:'FAQ Management',        fn:buildFaqs     },
+    { id:'pricing',  icon:'💰', label:'Pricing Tiers',         fn:buildPricing  },
+  ];
+
+  document.getElementById('accWrap').innerHTML = sections.map((s,i)=>`
+    <div class="acc-item">
+      <div class="acc-head${i===0?' open':''}" onclick="toggleAcc(this)" id="ah-${s.id}">
+        <div style="display:flex;align-items:center;gap:10px;"><span>${s.icon}</span>${s.label}</div>
+        <span class="acc-arr">▾</span>
+      </div>
+      <div class="acc-body${i===0?' open':''}" id="ab-${s.id}">
+        <div id="ab-inner-${s.id}">Loading...</div>
+      </div>
+    </div>`).join('');
+
+
+  function toggleAcc(head) {
+    const isOpen = head.classList.contains('open');
+    document.querySelectorAll('.acc-head').forEach(h=>h.classList.remove('open'));
+    document.querySelectorAll('.acc-body').forEach(b=>b.classList.remove('open'));
+    if(!isOpen) {
+      head.classList.add('open');
+      head.nextElementSibling.classList.add('open');
+    }
+  }
+
+  function saved(btnId) {
+    const el=document.getElementById(btnId);
+    if(!el) return;
+    const orig=el.textContent;
+    el.textContent='✔ Saved!'; el.style.color='var(--ok)';
+    setTimeout(()=>{ el.textContent=orig; el.style.color=''; },3000);
+  }
+
+  // ---- GENERAL ----
+  function buildGeneral(el) {
+    el.innerHTML = `
+      <div class="g2" style="margin-bottom:16px;">
+        <div class="fg"><label class="fl">Business Name</label><input type="text" class="fc" id="bizName" value="Cope Aesthetic Customs"/></div>
+        <div class="fg"><label class="fl">Owner Name</label><input type="text" class="fc" id="ownerName" value="Buffy Cope"/></div>
+        <div class="fg"><label class="fl">Contact Email</label><input type="email" class="fc" id="bizEmail" value="CopeAestheticCustoms@gmail.com"/></div>
+        <div class="fg"><label class="fl">Phone / WhatsApp</label><input type="text" class="fc" id="bizPhone" value="(919) 295-2569"/></div>
+        <div class="fg"><label class="fl">Timezone</label>
+          <select class="fc" id="tz">
+            <option>America/New_York (EST)</option>
+            <option>America/Chicago (CST)</option>
+            <option>America/Los_Angeles (PST)</option>
+          </select>
+        </div>
+        <div class="fg"><label class="fl">Language</label>
+          <select class="fc" id="lang"><option>English</option><option>Spanish</option></select>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-gld" onclick="saveGeneral()">Save Changes</button>
+        <span id="genSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+      </div>`;
+  }
+
+  function saveGeneral() {
+    const el=document.getElementById('genSv');
+    el.style.display='inline'; setTimeout(()=>el.style.display='none',3000);
+    showToast('General settings saved!');
+  }
+
+  // ---- BOOKING ----
+  async function buildBooking(el) {
+    // Load from real API, fall back to localStorage
+    let bs = { status:'waitlist', until:'2026-05-18', message:'', prod_start:'May 18, 2026' };
+    try {
+      const res = await apiFetch('/api/settings/booking');
+      if (res && res.ok) bs = res.data;
+    } catch(e) {}
+    el.innerHTML = `
+      <div style="padding:14px;background:rgba(242,23,165,0.05);border:1px solid rgba(242,23,165,0.12);border-radius:8px;margin-bottom:20px;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--mg);margin-bottom:6px;">Live on landing page</div>
+        <div style="font-size:13px;color:var(--txt-m);">This section controls what customers see on the public landing page about your availability.</div>
+      </div>
+      <div class="g2" style="margin-bottom:16px;">
+        <div class="fg">
+          <label class="fl">Booking Status</label>
+          <select class="fc" id="bkStatus">
+            <option value="open"     ${bs.status==='open'    ?'selected':''}>🟢 Open — Accepting Orders</option>
+            <option value="waitlist" ${bs.status==='waitlist'?'selected':''}>🟡 Waitlist Only</option>
+            <option value="booked"   ${bs.status==='booked'  ?'selected':''}>🔴 Fully Booked — Not Accepting</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label class="fl">Booked Until Date</label>
+          <input type="date" class="fc" id="bkUntil" value="${bs.until||'2026-05-18'}"/>
+        </div>
+        <div class="fg">
+          <label class="fl">Current Production Start Date</label>
+          <input type="text" class="fc" id="bkProdStart" value="${bs.prod_start||'May 18, 2026'}" placeholder="e.g. May 18, 2026"/>
+        </div>
+        <div class="fg">
+          <label class="fl">Custom Banner Message</label>
+          <input type="text" class="fc" id="bkMsg" value="${bs.message||''}" placeholder="e.g. Currently booked through May 18..."/>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-gld" onclick="saveBooking()">Save & Update Landing Page</button>
+        <span id="bkSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved! Landing page updated.</span>
+      </div>`;
+  }
+
+  async function saveBooking() {
+    const status   = document.getElementById('bkStatus').value;
+    const until    = document.getElementById('bkUntil').value;
+    const message  = document.getElementById('bkMsg').value;
+    const prod_start = document.getElementById('bkProdStart').value;
+    const res = await apiFetch('/api/settings/booking', {
+      method: 'PATCH',
+      body: JSON.stringify({ status, until, message, prod_start })
+    });
+    // Also save to localStorage as fallback
+    localStorage.setItem('booking_status',  status);
+    localStorage.setItem('booked_until',    until);
+    localStorage.setItem('booking_message', message);
+    localStorage.setItem('prod_start',      prod_start);
+    const el=document.getElementById('bkSv');
+    if (res && res.ok) {
+      el.style.display='inline'; setTimeout(()=>el.style.display='none',4000);
+      showToast('Booking status updated!');
+    } else {
+      showToast('Save failed', 'error');
+    }
+  }
+
+  // ---- USERS ----
+  async function buildUsers(el) {
+    // Load real admin users from API
+    let users = [];
+    const usersRes = await apiFetch('/api/users');
+    if (usersRes && usersRes.ok) users = usersRes.data || [];
+    el.innerHTML = `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+        <button class="btn btn-mg btn-sm" onclick="openAddUser()">+ Add Admin User</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Phone</th><th>Joined</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${users.map(u=>`<tr>
+              <td><strong>${u.name}</strong></td>
+              <td style="font-size:12px;color:var(--txt-m);">${u.email}</td>
+              <td><span style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${u.role==='owner'?'var(--gld)':'var(--chr)'};">${u.role}</span></td>
+              <td style="font-size:12px;color:var(--txt-m);">${u.phone||'—'}</td>
+              <td>${formatDate(u.created_at)}</td>
+              <td><button class="btn btn-err btn-sm" onclick="removeUser(${u.id})" ${u.role==='owner'?'disabled':''}>Remove</button></td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function openAddUser() {
+    const modal=document.createElement('div'); modal.className='overlay open'; modal.id='userModal';
+    modal.innerHTML=`<div class="modal">
+      <button class="modal-x" onclick="document.getElementById('userModal').remove()">✕</button>
+      <div class="modal-title">Add Admin User</div>
+      <div class="fg"><label class="fl">Full Name</label><input type="text" class="fc" id="uName" placeholder="Jane Doe"/></div>
+      <div class="fg"><label class="fl">Email</label><input type="email" class="fc" id="uEmail" placeholder="jane@copeaesthetic.com"/></div>
+      <div class="fg"><label class="fl">Role</label>
+        <select class="fc" id="uRole"><option value="employee">Employee</option><option value="owner">Owner</option></select>
+      </div>
+      <div class="fg"><label class="fl">Temporary Password</label><input type="password" class="fc" id="uPw" placeholder="••••••••"/></div>
+      <button class="btn btn-mg" style="width:100%;justify-content:center;margin-top:8px;" onclick="addUser()">Create User</button>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+
+  function addUser() {
+    showToast('User created! (connects to backend when ready)');
+    document.getElementById('userModal').remove();
+  }
+
+  function removeUser(id) {
+    if(!confirm('Remove this admin user?')) return;
+    showToast('User removed. (connects to backend when ready)');
+    buildUsers(document.getElementById('ab-inner-users'));
+  }
+
+  // ---- NOTIFICATIONS ----
+  function buildNotifs(el) {
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">Configure how Buffy and customers receive notifications.</div>
+      <div class="tog-row"><span class="tog-lbl">Email notifications to Buffy</span><label class="toggle"><input type="checkbox" id="nEmail" checked/><span class="tslider"></span></label></div>
+      <div class="tog-row"><span class="tog-lbl">New order alerts</span><label class="toggle"><input type="checkbox" id="nNewOrder" checked/><span class="tslider"></span></label></div>
+      <div class="tog-row"><span class="tog-lbl">Rush order alerts</span><label class="toggle"><input type="checkbox" id="nRush" checked/><span class="tslider"></span></label></div>
+      <div class="tog-row"><span class="tog-lbl">Customer email status updates</span><label class="toggle"><input type="checkbox" id="nCustStatus" checked/><span class="tslider"></span></label></div>
+      <div class="tog-row"><span class="tog-lbl">Customer shipment notifications</span><label class="toggle"><input type="checkbox" id="nShip" checked/><span class="tslider"></span></label></div>
+      <div style="margin-top:16px;display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-gld" onclick="saveNotifs()">Save</button>
+        <span id="nSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+      </div>`;
+  }
+
+  function saveNotifs() { const el=document.getElementById('nSv'); el.style.display='inline'; setTimeout(()=>el.style.display='none',3000); }
+
+  // ---- FAQS ----
+  let faqs = [];
+  // FAQs loaded async inside buildFaqs
+  async function buildFaqs(el) {
+    if (!faqs.length) {
+      try {
+        const faqsRes = await apiFetch('/api/faqs');
+        if (faqsRes && faqsRes.ok) faqs = faqsRes.data || [];
+      } catch(e) {}
+    }
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">These FAQs appear on the customer Terms & FAQs page and Customer Portal.</div>
+      <div id="faqEdit"></div>
+      <button class="btn btn-out btn-sm" style="margin-top:10px;" onclick="addFaq()">+ Add FAQ</button>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-gld" onclick="saveFaqs()">Save FAQs</button>
+        <span id="faqSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+      </div>`;
+    renderFaqEdit();
+  }
+
+  function renderFaqEdit() {
+    document.getElementById('faqEdit').innerHTML = faqs.map((f,i)=>`
+      <div style="background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:14px;margin-bottom:10px;">
+        <div class="fg" style="margin-bottom:10px;">
+          <label class="fl">Question ${i+1}</label>
+          <input type="text" class="fc" value="${f.q}" oninput="faqs[${i}].q=this.value"/>
+        </div>
+        <div class="fg" style="margin-bottom:8px;">
+          <label class="fl">Answer</label>
+          <textarea class="fc" rows="2" oninput="faqs[${i}].a=this.value">${f.a}</textarea>
+        </div>
+        <button class="btn btn-err btn-sm" onclick="faqs.splice(${i},1);renderFaqEdit()">Remove</button>
+      </div>`).join('') || '<div style="font-size:13px;color:var(--txt-d);">No FAQs yet.</div>';
+  }
+
+  function addFaq() { faqs.push({q:'',a:''}); renderFaqEdit(); }
+
+  function saveFaqs() {
+    // FAQs saved to server — TODO: add POST /api/faqs endpoint
+    const el=document.getElementById('faqSv'); el.style.display='inline'; setTimeout(()=>el.style.display='none',3000);
+    showToast('FAQs saved!');
+  }
+
+  // ---- PRICING ----
+  function buildPricing(el) {
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">These pricing tiers are displayed on the Terms & FAQs page that customers must read before registering.</div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Tier</th><th>Starting Price</th><th>Description</th></tr></thead>
+          <tbody>
+            ${PRICING_TIERS.concat([{tier:'Cleaning Fee', price_from:25, desc:'Pre-loved items'},{tier:'Extra Revision', price_from:20, desc:'Beyond 3 free'}]).map(p=>`<tr>
+              <td><strong>${p.tier}</strong></td>
+              <td style="color:var(--gld);font-weight:700;">${p.price_from?'$'+p.price_from+'+':'Varies'}</td>
+              <td style="font-size:12px;color:var(--txt-m);">${p.desc}</td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>
+      <div style="margin-top:14px;font-size:12px;color:var(--txt-d);">Contact your developer to update pricing tiers — these are currently stored in core.js.</div>`;
+  }
+
+
+  // Init — called after all functions defined
+  sections.forEach(s => {
+    if (s.fn.constructor.name === "AsyncFunction") {
+      s.fn(document.getElementById(`ab-inner-${s.id}`));
+    } else {
+      s.fn(document.getElementById(`ab-inner-${s.id}`));
+    }
+  });
+</script>
+</body>
+</html>

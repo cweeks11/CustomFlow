@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Order Detail — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!--
+  PAGE: Customer Order Detail (customer-order-detail.html)
+  ============================================================
+  PURPOSE:
+    The customer's view of a single order. Shows current status,
+    pipeline progress, payments, tracking numbers, Buffy's mockups,
+    and allows the customer to upload reference photos and request revisions.
+
+  HOW TO NAVIGATE HERE:
+    From customer-portal.html — click any order row.
+    URL param: customer-order-detail.html?id=1047
+
+  WHAT'S ON THIS PAGE:
+    1. Status hero with pipeline progress bar
+    2. Waitlist message — contextual message based on current status
+       (e.g. "You're on the Free Waitlist — pay booking fee to secure your spot")
+    3. Order details + payments (2-column)
+    4. Inbound tracking — customer enters their shipping tracking number here
+    5. Outbound tracking — read-only, populated by Buffy when she ships it back
+    6. Reference photos — customer can upload inspiration images
+    7. Mockup gallery — read-only, Buffy uploads these from admin side
+    8. Revision panel — shows how many free revisions are left, request more
+    9. Order timeline — status history log
+   10. Contact Buffy shortcuts (email + phone)
+
+  KEY FUNCTIONS:
+    render()         — builds the full page from current ORDER state
+    renderGal()      — renders a photo gallery (deletable or read-only)
+    addRefPhotos()   — handles file input change, reads as base64, adds to gallery
+    saveInbound()    — saves the customer's shipping tracking number
+    openRevModal()   — opens revision request modal (shows paid warning if >3 used)
+    submitRevision() — appends revision to local array and re-renders
+
+  BACKEND TODO:
+    render data      → GET /api/orders/:id
+    saveInbound()    → PATCH /api/orders/:id  { inbound_tracking: '...' }
+    addRefPhotos()   → POST /api/order_images  (multipart, type: 'reference')
+    submitRevision() → POST /api/revisions     { order_id, notes }
+  ============================================================
+-->
+<script src="core.js"></script>
+<nav class="nav">
+  <div class="nav-logo"><img src="logo.png" alt="Cope Aesthetic Customs"/></div>
+  <div class="nav-links">
+    <a href="customer-portal.html" class="nav-a active">My Orders</a>
+    <a href="customer-order-form.html" class="nav-a">New Order</a>
+    <a href="customer-track.html" class="nav-a">Track</a>
+    <a href="customer-settings.html" class="nav-a">Settings</a>
+  </div>
+  <div class="nav-right">
+    <div class="nav-avatar" id="navAv">J</div>
+  </div>
+</nav>
+
+<div class="page page-sm">
+  <a href="customer-portal.html" class="back">← Back to My Orders</a>
+  <div id="wrap"><div class="spin"></div></div>
+</div>
+
+<!-- LIGHTBOX -->
+<div class="lb" id="lb" onclick="closeLb()"><button class="lb-x" onclick="closeLb()">✕</button><img id="lbImg" src="" alt=""/></div>
+<div class="toast" id="toast"></div>
+
+<script>
+
+  requireCustomerAuth();
+  const user = JSON.parse(localStorage.getItem('customer_user')||'{}');
+  const fn = (user.name||'').split(' ')[0];
+  document.getElementById('navAv').textContent = fn[0].toUpperCase();
+
+  const params = new URLSearchParams(location.search);
+  const OID = parseInt(params.get('id'));
+  if (!OID) { window.location.href = 'customer-portal.html'; }
+
+  // Load full order detail from real API
+(async()=>{
+  const detailResult = await apiFetch('/api/orders/' + OID);
+  if (!detailResult || !detailResult.ok) {
+    window.location.href = 'customer-portal.html';
+    throw new Error('Order not found');
+  }
+  const detail = detailResult.data;
+
+  let ORDER      = detail.order;
+  const payments   = detail.payments || [];
+  const mockups    = detail.mockups || [];
+  const revisions  = detail.revisions || [];
+  const statusHist = detail.status_history || [];
+  const consults   = detail.consult_calls || [];
+  const addons     = detail.add_ons || [];
+  const refImgs    = (detail.order_images||[]).filter(i=>i.type==='reference');
+  const mockImgs   = (detail.order_images||[]).filter(i=>i.type==='mockup');
+
+  const pip = ['free_waitlist','paid_waitlist','production_queue','prep','painting','completed','shipped','closed'];
+
+  let myRefPhotos = [];
+
+})();
+  function render() {
+    const pidx = pip.indexOf(ORDER.status);
+    const freeRevs = 3;
+    const usedRevs = revisions.length;
+    const mockupApproved = mockups.some(m=>m.approved);
+    const totalPaid = payments.reduce((s,p)=>s+(p.status==='paid'?parseFloat(p.amount):0),0);
+
+    document.getElementById('wrap').innerHTML = `
+      <!-- STATUS HERO -->
+      <div class="card" style="margin-bottom:20px;padding:26px 28px;position:relative;overflow:hidden;">
+        <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(to right,var(--mg),var(--vio-l));"></div>
+        <div style="display:flex;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+          <div>
+            <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--txt-m);margin-bottom:5px;">Order #${ORDER.id}</div>
+            <div style="font-size:26px;font-weight:700;letter-spacing:1px;text-transform:uppercase;line-height:1;margin-bottom:8px;">${ORDER.item_type}</div>
+            <div style="display:flex;gap:12px;flex-wrap:wrap;font-size:12px;color:var(--txt-m);">
+              <span style="text-transform:capitalize;">🎨 ${ORDER.pricing_tier||'—'}</span>
+              <span>📅 ${formatDate(ORDER.created_at)}</span>
+              ${ORDER.must_have_by?`<span style="color:var(--warn);">⏰ Needed by ${formatDate(ORDER.must_have_by)}</span>`:''}
+              ${ORDER.is_rush?`<span style="color:var(--warn);font-weight:700;">⚡ Rush${ORDER.rush_approved?' — Approved':' — Pending Buffy\'s approval'}</span>`:''}
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;align-items:flex-end;gap:6px;">
+            ${statusBadge(ORDER.status)}
+            <div style="font-size:11px;color:var(--txt-m);">Updated ${timeAgo(ORDER.updated_at)}</div>
+          </div>
+        </div>
+        <!-- PIPELINE -->
+        <div class="pipeline" style="margin-top:18px;">
+          <div class="pip-track">
+            ${pip.map((s,i)=>`
+              <div style="display:flex;align-items:center;flex-shrink:0;">
+                <div class="pip-node ${i<pidx?'past':i===pidx?'active':'future'}">${STATUSES[s].label}</div>
+                ${i<pip.length-1?`<div class="pip-conn ${i<pidx?'past':'future'}"></div>`:''}
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <!-- WAITLIST STATUS MESSAGE -->
+      ${ORDER.status==='free_waitlist'?`
+      <div style="padding:16px 20px;background:rgba(133,132,136,0.06);border:1px solid rgba(133,132,136,0.2);border-radius:8px;margin-bottom:18px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--chr);margin-bottom:6px;">📋 You're on the Free Waitlist</div>
+        <div style="font-size:13px;color:var(--txt-m);margin-bottom:12px;">Buffy will reach out with a quote. Pay the $50 booking fee to lock your spot and move to the Paid Waitlist.</div>
+        <div style="font-size:11px;color:var(--txt-d);">Current production start: <strong style="color:var(--gld);">${getBookingStatus().prod_start}</strong></div>
+      </div>` : ''}
+      ${ORDER.status==='paid_waitlist'?`
+      <div style="padding:16px 20px;background:rgba(216,188,132,0.06);border:1px solid rgba(216,188,132,0.2);border-radius:8px;margin-bottom:18px;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--gld);margin-bottom:6px;">💳 Paid Waitlist — You're in!</div>
+        <div style="font-size:13px;color:var(--txt-m);">Your spot is secured. Pay your full invoice to move into the Production Queue when it's your turn.</div>
+      </div>` : ''}
+
+      <!-- 2-COL: Order Details + Payments -->
+      <div class="g2" style="margin-bottom:18px;">
+        <div class="card">
+          <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Your Order</div></div>
+          <div style="display:flex;flex-direction:column;gap:12px;font-size:13px;">
+            ${crow('Item Type', ORDER.item_type)}
+            ${crow('Pricing Tier', ORDER.pricing_tier||'—', true)}
+            ${crow('Design Notes', '')}
+          </div>
+          <div style="font-family:var(--fb);font-style:italic;font-size:15px;color:var(--txt-m);line-height:1.7;margin-top:4px;">"${ORDER.customer_notes||'No notes provided.'}"</div>
+          ${addons.length?`<div style="margin-top:14px;border-top:1px solid var(--b1);padding-top:12px;"><div style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-m);margin-bottom:8px;">Add-Ons</div>${addons.map(a=>`<div style="font-size:13px;color:var(--txt-m);">✓ ${a.name} — <span style="color:var(--gld);">${formatCurrency(a.price)}</span></div>`).join('')}</div>`:''}
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--ok);"></span>Payments</div></div>
+          ${payments.length?payments.map(p=>`
+            <div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--b1);font-size:13px;">
+              <span style="color:var(--txt-m);text-transform:capitalize;">${p.type} fee</span>
+              <span style="color:var(--gld);font-weight:700;">${formatCurrency(p.amount)}</span>
+            </div>`).join('')+`<div style="padding-top:10px;font-size:12px;color:var(--txt-m);">Total paid: <strong style="color:var(--ok);">${formatCurrency(totalPaid)}</strong></div>` : '<div style="font-size:13px;color:var(--txt-d);">No payments recorded yet.</div>'}
+          <div style="margin-top:14px;padding:10px 12px;background:rgba(216,188,132,0.07);border:1px solid rgba(216,188,132,0.15);border-radius:6px;font-size:12px;color:var(--txt-m);">
+            💡 Pay via <strong>Zelle, Venmo, or CashApp</strong> to Buffy after she sends your invoice. Then message her with confirmation.
+          </div>
+        </div>
+      </div>
+
+      <!-- INVOICES FROM BUFFY -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Invoices from Buffy</div></div>
+        <div id="custInvoices"></div>
+      </div>
+
+      <!-- TRACKING -->
+      <div class="g2" style="margin-bottom:18px;">
+        <div class="card">
+          <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Inbound — Your Item to Buffy</div></div>
+          <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Send your item to Buffy using insured, tracked shipping. Enter your tracking # below.</div>
+          ${ORDER.inbound_tracking?`<div class="track-num">${ORDER.inbound_tracking}</div><div style="font-size:11px;color:var(--txt-d);">Tracking on file</div>`:''}
+          <div style="display:flex;gap:8px;margin-top:10px;">
+            <input type="text" class="fc" id="inboundTrk" placeholder="Your tracking number" value="${ORDER.inbound_tracking||''}" style="flex:1;letter-spacing:1.5px;"/>
+            <button class="btn btn-gld btn-sm" onclick="saveInbound()">Save</button>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title"><span class="card-dot"></span>Outbound — Buffy to You</div></div>
+          <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Once your piece is complete and shipped, your tracking number will appear here.</div>
+          ${ORDER.outbound_tracking
+            ? `<div class="track-num">${ORDER.outbound_tracking}</div><div style="font-size:11px;color:var(--txt-d);margin-top:3px;">${ORDER.outbound_carrier||''}</div>`
+            : `<div class="track-num empty">Awaiting shipment...</div>`}
+        </div>
+      </div>
+
+      <!-- REFERENCE PHOTOS + MOCKUPS -->
+      <div class="g2" style="margin-bottom:18px;">
+        <div class="card">
+          <div class="card-head">
+            <div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>My Reference Photos</div>
+            <label class="btn btn-out btn-sm" style="cursor:pointer;">+ Add Photos<input type="file" accept="image/*" multiple style="display:none;" onchange="addRefPhotos(event)"/></label>
+          </div>
+          <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Upload inspiration photos, references, or logos for Buffy.</div>
+          <div class="gallery" id="refGal"><div class="gmt">No reference photos yet.</div></div>
+        </div>
+        <div class="card">
+          <div class="card-head"><div class="card-title"><span class="card-dot"></span>Design Mockups from Buffy</div></div>
+          <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Buffy will upload mockups here for your approval before painting begins.</div>
+          <div class="gallery" id="mockupGal"><div class="gmt">No mockups yet. Buffy will upload when ready.</div></div>
+          ${mockupApproved?`<div style="margin-top:10px;padding:8px 12px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);border-radius:5px;font-size:12px;color:var(--ok);">✅ You have approved the design. Painting in progress!</div>`:''}
+        </div>
+      </div>
+
+      <!-- REVISIONS -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-head">
+          <div class="card-title"><span class="card-dot" style="background:var(--vio-l);"></span>Design Revisions
+            <span style="font-size:11px;font-weight:400;color:var(--txt-m);text-transform:none;letter-spacing:0;">— ${usedRevs}/${freeRevs} free revisions used</span>
+          </div>
+          ${usedRevs<freeRevs?`<button class="btn btn-out btn-sm" onclick="openRevModal()">+ Request Revision</button>`:'<span style="font-size:11px;color:var(--warn);">3 free used — paid revisions only</span>'}
+        </div>
+        <div style="padding:10px 0;margin-bottom:8px;font-size:12px;color:var(--txt-m);">
+          Up to 3 revisions are included free. After that, additional revisions are $20 each.
+        </div>
+        ${revisions.length ? revisions.map(r=>`
+          <div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px;">
+            <div style="width:24px;height:24px;border-radius:50%;background:${r.revision_number<=freeRevs?'rgba(46,204,113,0.1)':'rgba(232,160,32,0.1)'};color:${r.revision_number<=freeRevs?'var(--ok)':'var(--warn)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">R${r.revision_number}</div>
+            <div style="flex:1;color:var(--txt-m);">${r.notes||'—'}</div>
+            <div style="color:var(--txt-d);font-size:11px;white-space:nowrap;">${formatDate(r.created_at)}</div>
+          </div>`).join('') : '<div style="font-size:13px;color:var(--txt-d);">No revisions yet.</div>'}
+      </div>
+
+      <!-- STATUS HISTORY -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Order Timeline</div></div>
+        ${statusHist.length ? statusHist.map(h=>`
+          <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px;">
+            <div style="width:6px;height:6px;border-radius:50%;background:var(--mg);flex-shrink:0;margin-top:5px;"></div>
+            <div>
+              <span style="color:var(--txt-m);">${STATUSES[h.from_status]?.label||h.from_status} →</span>
+              <strong> ${STATUSES[h.to_status]?.label||h.to_status}</strong>
+              ${h.note?`<div style="font-size:12px;color:var(--txt-m);margin-top:2px;">${h.note}</div>`:''}
+            </div>
+            <div style="margin-left:auto;font-size:11px;color:var(--txt-d);white-space:nowrap;">${formatDate(h.changed_at)}</div>
+          </div>`).join('') : '<div style="font-size:13px;color:var(--txt-d);">No activity yet.</div>'}
+      </div>
+
+      <!-- CONTACT BUFFY -->
+      <div style="padding:16px 20px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div style="font-size:13px;color:var(--txt-m);">Questions about your order?</div>
+        <div style="display:flex;gap:10px;">
+          <a href="mailto:CopeAestheticCustoms@gmail.com?subject=Order #${ORDER.id}" class="btn btn-out btn-sm">📧 Email Buffy</a>
+          <a href="tel:9192952569" class="btn btn-gld btn-sm">📞 Call</a>
+        </div>
+      </div>`;
+
+    // Render galleries
+    renderGal('refGal', myRefPhotos, true);
+    renderGal('mockupGal', mockImgs.filter(i=>i.url).map(i=>i.url), false);
+  }
+
+  function crow(label, val, cap=false) {
+    return `<div style="display:flex;justify-content:space-between;"><span style="color:var(--txt-m);">${label}</span><span style="font-weight:600;${cap?'text-transform:capitalize;':''}">${val||'—'}</span></div>`;
+  }
+
+  function renderGal(id, imgs, canDel) {
+    const el=document.getElementById(id); if(!el) return;
+    if(!imgs.length){el.innerHTML='<div class="gmt">None yet.</div>';return;}
+    el.innerHTML=imgs.map((src,i)=>`
+      <div class="gthumb">
+        <img src="${src||'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%231F1F1F%22 width=%22100%22 height=%22100%22/%3E%3C/svg%3E'}" onclick="openLb(this.src)"/>
+        ${canDel?`<button class="gdel" onclick="delRef(${i})">✕</button>`:''}
+      </div>`).join('');
+  }
+
+  function addRefPhotos(e) {
+    Array.from(e.target.files).forEach(f=>{
+      const r=new FileReader();
+      r.onload=ev=>{ myRefPhotos.push(ev.target.result); renderGal('refGal',myRefPhotos,true); showToast('Reference photo added!'); };
+      r.readAsDataURL(f);
+    });
+    e.target.value='';
+  }
+
+  function delRef(i) { myRefPhotos.splice(i,1); renderGal('refGal',myRefPhotos,true); }
+
+  function saveInbound() {
+    const v=document.getElementById('inboundTrk').value.trim();
+    if(!v){showToast('Enter a tracking number.','warning');return;}
+    ORDER.inbound_tracking=v;
+    render(); showToast('Tracking saved! Buffy will see this.');
+  }
+
+  function openRevModal() {
+    const usedRevs=revisions.length, freeRevs=3;
+    const isPaid=usedRevs>=freeRevs;
+    const modal=document.createElement('div'); modal.className='overlay open'; modal.id='revModal';
+    modal.innerHTML=`<div class="modal">
+      <button class="modal-x" onclick="document.getElementById('revModal').remove()">✕</button>
+      <div class="modal-title">Request a Revision</div>
+      ${isPaid?`<div style="padding:10px 12px;background:rgba(232,160,32,0.1);border:1px solid rgba(232,160,32,0.25);border-radius:6px;font-size:12px;color:var(--warn);margin-bottom:14px;">This is revision #${usedRevs+1} — beyond your 3 free. A $20 charge will apply.</div>`:''}
+      <div class="fg"><label class="fl">What changes would you like?</label><textarea class="fc" id="revNotes" rows="5" placeholder="Be specific! e.g. Make the stars larger, change the blue to navy..."></textarea></div>
+      <button class="btn btn-mg" style="width:100%;justify-content:center;margin-top:8px;" onclick="submitRevision()">Submit Revision Request</button>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+
+  function submitRevision() {
+    const notes=document.getElementById('revNotes').value.trim();
+    if(!notes){showToast('Please describe the changes.','warning');return;}
+    revisions.push({id:Date.now(),order_id:OID,revision_number:revisions.length+1,notes,created_at:new Date().toISOString(),charge_amount:revisions.length>=3?20:0});
+    document.getElementById('revModal').remove();
+    render(); showToast('Revision request sent to Buffy!');
+  }
+
+  // renderCustInvoices() — shows all invoices Buffy has sent to this customer.
+  // Each sent invoice shows the label, amount, sent date, and a download link.
+  // Invoices that haven't been sent yet don't appear here (customer only sees sent ones).
+  // In production: GET /api/orders/:id/invoices returns only status='sent' invoices.
+  function renderCustInvoices() {
+    const el = document.getElementById('custInvoices');
+    if (!el) return;
+    const invoices = detail.invoices ? detail.invoices.filter(i => i.status === 'sent') : [];
+    if (!invoices.length) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--txt-d);padding:4px 0;">No invoices sent yet. Buffy will send your invoice once she's reviewed your order.</div>`;
+      return;
+    }
+    el.innerHTML = invoices.map(inv => `
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px 0;border-bottom:1px solid var(--b1);">
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--txt);">${inv.label}</div>
+          <div style="font-size:12px;color:var(--txt-m);">
+            ${inv.amount ? formatCurrency(inv.amount) : 'See PDF for amount'} · Sent ${formatDate(inv.sent_at)}
+          </div>
+        </div>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <span style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ok);">✔ Received</span>
+          ${inv.file_url ? `<a href="${inv.file_url}" target="_blank" class="btn btn-gld btn-sm">↓ Download PDF</a>` : '<span style="font-size:11px;color:var(--txt-d);">PDF not available in demo</span>'}
+        </div>
+      </div>`).join('') + `
+      <div style="margin-top:12px;padding:10px 12px;background:rgba(216,188,132,0.06);border:1px solid rgba(216,188,132,0.12);border-radius:6px;font-size:12px;color:var(--txt-m);">
+        💳 Pay via <strong>Zelle, Venmo, or CashApp</strong> to Buffy after receiving your invoice. Message her with your confirmation number.
+      </div>`;
+  }
+
+  function openLb(src){document.getElementById('lbImg').src=src;document.getElementById('lb').classList.add('open');}
+  function closeLb(){document.getElementById('lb').classList.remove('open');}
+  document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLb();});
+
+  render();
+
+
+</script>
+</body>
+</html>

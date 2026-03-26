@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Settings — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!--
+  PAGE: Customer Settings (customer-settings.html)
+  ============================================================
+  PURPOSE:
+    Account management for customers. Update profile info,
+    notification preferences, and password.
+
+  WHAT'S ON THIS PAGE:
+    1. Profile — first name, last name, email, phone, shipping address
+    2. Notification preferences — email updates, SMS, mockup alerts, shipping alerts
+    3. Change password — current + new + confirm
+    4. Danger zone — sign out, request account deletion
+    5. Contact shortcuts — email and phone links to reach Buffy
+
+  KEY FUNCTIONS:
+    saveProfile()     — updates 'customer_user' in localStorage with new values
+                        In production: PATCH /api/me  { name, email, phone }
+    saveNotifs()      — saves notification toggles
+                        In production: PATCH /api/me  { notify_email, notify_sms }
+    changePassword()  — validates new password matches and meets length requirement
+                        In production: POST /api/change-password { current, new }
+    doLogout()        — calls logout() from core.js to clear tokens and redirect
+    delAccount()      — placeholder confirmation for account deletion request
+                        In production: POST /api/account/delete-request
+
+  NOTE:
+    On page load, the form pre-fills with data from localStorage ('customer_user')
+    so the customer sees their current info without an extra API call.
+  ============================================================
+-->
+<script src="core.js"></script>
+<nav class="nav">
+  <div class="nav-logo"><img src="logo.png" alt="Cope Aesthetic Customs"/></div>
+  <div class="nav-links">
+    <a href="customer-portal.html" class="nav-a">My Orders</a>
+    <a href="customer-order-form.html" class="nav-a">New Order</a>
+    <a href="customer-track.html" class="nav-a">Track</a>
+    <a href="customer-settings.html" class="nav-a active">Settings</a>
+  </div>
+  <div class="nav-right"><div class="nav-avatar" id="navAv">J</div></div>
+</nav>
+
+<div class="page page-sm">
+  <div class="page-head"><div><div class="page-title">Account <span>Settings</span></div><div class="page-sub">Manage your profile and preferences</div></div></div>
+
+  <!-- PROFILE -->
+  <div class="card" style="margin-bottom:18px;">
+    <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Profile Information</div></div>
+    <div class="g2">
+      <div class="fg"><label class="fl">First Name</label><input type="text" class="fc" id="fn" placeholder="First name"/></div>
+      <div class="fg"><label class="fl">Last Name</label><input type="text" class="fc" id="ln" placeholder="Last name"/></div>
+      <div class="fg"><label class="fl">Email Address</label><input type="email" class="fc" id="email" placeholder="you@email.com"/></div>
+      <div class="fg"><label class="fl">Phone Number</label><input type="tel" class="fc" id="phone" placeholder="(803) 555-0000"/></div>
+    </div>
+    <div class="fg"><label class="fl">Shipping Address (optional)</label>
+      <input type="text" class="fc" id="addr" placeholder="123 Main St, Columbia, SC 29201"/>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+      <button class="btn btn-gld" onclick="saveProfile()">Save Profile</button>
+      <span id="profSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+    </div>
+  </div>
+
+  <!-- NOTIFICATIONS -->
+  <div class="card" style="margin-bottom:18px;">
+    <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--vio-l);"></span>Notification Preferences</div></div>
+    <div class="tog-row"><span class="tog-lbl">Email updates on order status</span><label class="toggle"><input type="checkbox" id="notifEmail" checked/><span class="tslider"></span></label></div>
+    <div class="tog-row"><span class="tog-lbl">SMS / text notifications</span><label class="toggle"><input type="checkbox" id="notifSms"/><span class="tslider"></span></label></div>
+    <div class="tog-row"><span class="tog-lbl">Mockup ready for review</span><label class="toggle"><input type="checkbox" id="notifMockup" checked/><span class="tslider"></span></label></div>
+    <div class="tog-row"><span class="tog-lbl">Shipping notifications</span><label class="toggle"><input type="checkbox" id="notifShip" checked/><span class="tslider"></span></label></div>
+    <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
+      <button class="btn btn-gld" onclick="saveNotifs()">Save</button>
+      <span id="notifSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+    </div>
+  </div>
+
+  <!-- CHANGE PASSWORD -->
+  <div class="card" style="margin-bottom:18px;">
+    <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Change Password</div></div>
+    <div class="fg"><label class="fl">Current Password</label><input type="password" class="fc" id="curPw" placeholder="••••••••"/></div>
+    <div class="g2">
+      <div class="fg"><label class="fl">New Password</label><input type="password" class="fc" id="newPw" placeholder="Min. 6 characters"/></div>
+      <div class="fg"><label class="fl">Confirm New Password</label><input type="password" class="fc" id="confPw" placeholder="••••••••"/></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+      <button class="btn btn-gld" onclick="changePassword()">Update Password</button>
+      <span id="pwSv" style="font-size:12px;display:none;"></span>
+    </div>
+  </div>
+
+  <!-- DANGER ZONE -->
+  <div class="card" style="border-color:rgba(231,76,60,0.15);margin-bottom:18px;">
+    <div class="card-head"><div class="card-title" style="color:var(--err);">Danger Zone</div></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-err btn-sm" onclick="doLogout()">Sign Out of All Devices</button>
+      <button class="btn btn-err btn-sm" onclick="delAccount()" style="opacity:0.7;">Request Account Deletion</button>
+    </div>
+  </div>
+
+  <!-- CONTACT -->
+  <div style="text-align:center;padding:20px 0;border-top:1px solid var(--b1);">
+    <div style="font-size:11px;color:var(--txt-d);margin-bottom:10px;">Need help? Contact Buffy directly.</div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+      <a href="mailto:CopeAestheticCustoms@gmail.com" class="btn btn-out btn-sm">📧 Email</a>
+      <a href="tel:9192952569" class="btn btn-out btn-sm">📞 (919) 295-2569</a>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  requireCustomerAuth();
+  const user=JSON.parse(localStorage.getItem('customer_user')||'{}');
+  const parts=(user.name||'').split(' ');
+  document.getElementById('fn').value=parts[0]||'';
+  document.getElementById('ln').value=parts.slice(1).join(' ')||'';
+  document.getElementById('email').value=user.email||'';
+  if(user.phone) document.getElementById('phone').value=user.phone;
+  if(user.notify_sms) document.getElementById('notifSms').checked=user.notify_sms;
+  const fn=parts[0]||'J';
+  document.getElementById('navAv').textContent=fn[0].toUpperCase();
+
+  async function saveProfile(){
+    const name = document.getElementById('fn').value.trim() + ' ' + document.getElementById('ln').value.trim();
+    const phone = document.getElementById('phone').value.trim();
+    const notify_email = document.getElementById('notifEmail')?.checked ?? true;
+    const notify_sms = document.getElementById('notifSms')?.checked ?? false;
+    const result = await apiFetch('/api/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ name, phone, notify_email, notify_sms }),
+    });
+    const el = document.getElementById('profSv');
+    if (result && result.ok) {
+      const updUser = { ...user, name, phone, notify_email, notify_sms };
+      localStorage.setItem('customer_user', JSON.stringify(updUser));
+      el.style.display='inline'; setTimeout(()=>el.style.display='none',3000);
+      showToast('Profile saved!');
+    } else {
+      showToast('Failed to save profile', 'error');
+    }
+  }
+
+  async function saveNotifs(){
+    const notify_email = document.getElementById('notifEmail')?.checked ?? true;
+    const notify_sms = document.getElementById('notifSms')?.checked ?? false;
+    await apiFetch('/api/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ notify_email, notify_sms }),
+    });
+    const el=document.getElementById('notifSv'); el.style.display='inline'; setTimeout(()=>el.style.display='none',3000);
+    showToast('Notification preferences saved!');
+  }
+
+  async function changePassword(){
+    const cur=document.getElementById('curPw').value;
+    const nw=document.getElementById('newPw').value;
+    const conf=document.getElementById('confPw').value;
+    const el=document.getElementById('pwSv');
+    if(!cur||!nw){el.style.display='inline';el.style.color='var(--err)';el.textContent='Fill in all fields.';return;}
+    if(nw!==conf){el.style.display='inline';el.style.color='var(--err)';el.textContent='Passwords do not match.';return;}
+    if(nw.length<6){el.style.display='inline';el.style.color='var(--err)';el.textContent='Min. 6 characters.';return;}
+    const result = await apiFetch('/api/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: cur, new_password: nw }),
+    });
+    if (result && result.ok) {
+      el.style.display='inline';el.style.color='var(--ok)';el.textContent='✔ Password updated!';
+      document.getElementById('curPw').value='';document.getElementById('newPw').value='';document.getElementById('confPw').value='';
+      setTimeout(()=>el.style.display='none',3000);
+    } else {
+      el.style.display='inline';el.style.color='var(--err)';
+      el.textContent=result?.data?.error||'Failed to update password.';
+    }
+  }
+
+  function doLogout(){ logout(); }
+
+  function delAccount(){
+    if(!confirm('Request account deletion? This will send a request to Buffy. All your data will be removed within 30 days.')) return;
+    showToast('Account deletion request submitted. Buffy will follow up via email.');
+  }
+</script>
+</body>
+</html>
