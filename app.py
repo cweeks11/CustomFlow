@@ -1480,68 +1480,6 @@ def update_booking_settings():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/api/pricing_tiers', methods=['GET'])
-def get_pricing_tiers():
-    """GET /api/pricing_tiers — public, returns all active pricing tiers."""
-    try:
-        from sqlalchemy import text
-        tiers = db.session.execute(text(
-            "SELECT * FROM pricing_tiers ORDER BY sort_order, id"
-        )).fetchall()
-        return jsonify([dict(row._mapping) for row in tiers])
-    except Exception:
-        return jsonify([])
-
-
-@app.route('/api/pricing_tiers', methods=['POST'])
-@require_admin
-def create_pricing_tier():
-    """POST /api/pricing_tiers — create a new pricing tier."""
-    data = request.get_json()
-    from sqlalchemy import text
-    db.session.execute(text(
-        "INSERT INTO pricing_tiers (name, price_from, price_label, description, sort_order, is_active) "
-        "VALUES (:name, :price_from, :price_label, :description, :sort_order, :is_active)"
-    ), {
-        'name':        data.get('name', ''),
-        'price_from':  data.get('price_from', 0),
-        'price_label': data.get('price_label', ''),
-        'description': data.get('description', ''),
-        'sort_order':  data.get('sort_order', 0),
-        'is_active':   data.get('is_active', True),
-    })
-    db.session.commit()
-    return jsonify({'message': 'Created'}), 201
-
-
-@app.route('/api/pricing_tiers/<int:tier_id>', methods=['PATCH'])
-@require_admin
-def update_pricing_tier(tier_id):
-    """PATCH /api/pricing_tiers/<id> — update a pricing tier."""
-    data = request.get_json()
-    from sqlalchemy import text
-    updates = []
-    params = {'id': tier_id}
-    for field in ['name', 'price_from', 'price_label', 'description', 'sort_order', 'is_active']:
-        if field in data:
-            updates.append(f"{field} = :{field}")
-            params[field] = data[field]
-    if updates:
-        db.session.execute(text(f"UPDATE pricing_tiers SET {', '.join(updates)} WHERE id = :id"), params)
-        db.session.commit()
-    return jsonify({'message': 'Updated'})
-
-
-@app.route('/api/pricing_tiers/<int:tier_id>', methods=['DELETE'])
-@require_admin
-def delete_pricing_tier(tier_id):
-    """DELETE /api/pricing_tiers/<id> — delete a pricing tier."""
-    from sqlalchemy import text
-    db.session.execute(text("DELETE FROM pricing_tiers WHERE id = :id"), {'id': tier_id})
-    db.session.commit()
-    return jsonify({'deleted': tier_id})
-
-
 @app.route('/api/faqs', methods=['GET'])
 def get_faqs():
     """
