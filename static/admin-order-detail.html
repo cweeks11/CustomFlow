@@ -99,7 +99,12 @@
     if (!OID) { window.location.href = 'admin-orders.html'; return; }
     const result = await apiFetch('/api/orders/' + OID);
     if (!result || !result.ok) {
-      document.body.innerHTML = '<div style="padding:60px;text-align:center;color:#E74C3C;">Order #'+OID+' not found.</div>';
+      document.getElementById('heroWrap').innerHTML =
+        `<div style="padding:60px;text-align:center;color:var(--err);">
+          ⚠ Could not load Order #${OID}.
+          <div style="margin-top:12px;font-size:13px;color:var(--txt-m);">${result?.data?.error||'Check your connection or try again.'}</div>
+          <a href="admin-orders.html" class="btn btn-out btn-sm" style="margin-top:16px;display:inline-flex;">← Back to Orders</a>
+        </div>`;
       return;
     }
     const d = result.data;
