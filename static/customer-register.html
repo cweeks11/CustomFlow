@@ -95,6 +95,19 @@
   <div class="fg"><label class="fl">Email Address</label><input type="email" class="fc" id="email" placeholder="you@email.com"/></div>
   <div class="fg"><label class="fl">Phone Number</label><input type="tel" class="fc" id="phone" placeholder="(803) 555-0000"/></div>
 
+  <div class="sec-div">About You</div>
+  <div class="fg">
+    <label class="fl">How would you describe yourself?</label>
+    <select class="fc" id="customerType">
+      <option value="individual">Individual / Personal</option>
+      <option value="group">Group (e.g. team, club, family)</option>
+      <option value="influencer">Influencer / Content Creator</option>
+      <option value="nonprofit">Non-Profit Organization</option>
+      <option value="organization">Organization / Business</option>
+    </select>
+    <div style="font-size:11px;color:var(--txt-d);margin-top:5px;">This helps Buffy understand your needs. Groups, influencers, and organizations may qualify for special pricing.</div>
+  </div>
+
   <div class="sec-div">Notification Preferences</div>
   <div style="display:flex;gap:20px;margin-bottom:16px;">
     <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--txt-m);cursor:pointer;"><input type="checkbox" id="notifEmail" checked style="accent-color:var(--mg);"/> Email updates</label>
@@ -203,9 +216,10 @@
           name:         fn + ' ' + ln,
           email:        email,
           password:     pw,
-          phone:        document.getElementById('phone').value.trim(),
-          notify_email: document.getElementById('notifEmail').checked,
-          notify_sms:   document.getElementById('notifSms').checked,
+          phone:         document.getElementById('phone').value.trim(),
+          notify_email:  document.getElementById('notifEmail').checked,
+          notify_sms:    document.getElementById('notifSms').checked,
+          customer_type: document.getElementById('customerType').value,
         })
       });
       const data = await res.json();
