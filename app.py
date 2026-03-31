@@ -1141,22 +1141,79 @@ def update_booking_settings():
 def get_faqs():
     """
     GET /api/faqs
-    Returns FAQ list. No auth required — shown on terms page and customer portal.
-
-    Called by: customer-terms.html, customer-portal.html
-    TODO: Store FAQs in a database table. For now returns hardcoded defaults.
+    Returns all FAQs from the database sorted by sort_order.
+    No auth required — shown on terms page and customer portal.
     """
-    faqs = [
-        {'q': 'What is the return policy?',           'a': 'All custom orders are final sale. Every piece is one-of-one and made specifically for you.'},
-        {'q': 'How long does an order take?',         'a': 'Typically 2–4 weeks from when Buffy receives your item, depending on complexity.'},
-        {'q': 'What is the booking fee?',             'a': 'The booking fee is $50 and is non-refundable. It moves your order from the Free Waitlist to the Paid Waitlist.'},
-        {'q': 'How many revisions do I get?',         'a': 'Up to 3 revisions are included at no charge. Additional revisions beyond 3 are available for a fee.'},
-        {'q': 'What is a rush order?',                'a': 'Rush fee is 50% of your custom fee and requires Buffy\'s approval based on schedule availability.'},
-        {'q': 'What if my item is pre-loved (used)?', 'a': 'A cleaning fee applies to pre-loved items before painting can begin.'},
-        {'q': 'How do I send my item to Buffy?',      'a': 'After approval and deposit, Buffy will provide her shipping address.'},
-        {'q': 'Can I request a consult call?',        'a': 'Yes! Rush orders receive priority scheduling.'},
-    ]
-    return jsonify(faqs)
+    try:
+        faqs = Faq.query.order_by(Faq.sort_order, Faq.id).all()
+        return jsonify([{
+            'id':         f.id,
+            'q':          f.question,
+            'a':          f.answer,
+            'question':   f.question,
+            'answer':     f.answer,
+            'sort_order': f.sort_order,
+        } for f in faqs])
+    except Exception as e:
+        return jsonify([])
+
+
+@app.route('/api/faqs', methods=['POST'])
+@require_admin
+def create_faq():
+    """
+    POST /api/faqs
+    Body: { question, answer, sort_order }
+    Creates a new FAQ entry in the database.
+    Called by: admin-settings.html FAQ management
+    """
+    data = request.get_json()
+    if not data or not data.get('question'):
+        return jsonify({'error': 'question required'}), 400
+    faq = Faq(
+        question   = data['question'].strip(),
+        answer     = data.get('answer', '').strip(),
+        sort_order = data.get('sort_order', 0),
+    )
+    db.session.add(faq)
+    db.session.commit()
+    return jsonify({
+        'id':         faq.id,
+        'q':          faq.question,
+        'a':          faq.answer,
+        'question':   faq.question,
+        'answer':     faq.answer,
+        'sort_order': faq.sort_order,
+    }), 201
+
+
+@app.route('/api/faqs/<int:faq_id>', methods=['PATCH'])
+@require_admin
+def update_faq(faq_id):
+    """
+    PATCH /api/faqs/<id>
+    Updates an existing FAQ entry.
+    """
+    faq = Faq.query.get_or_404(faq_id)
+    data = request.get_json()
+    if 'question' in data: faq.question   = data['question'].strip()
+    if 'answer'   in data: faq.answer     = data['answer'].strip()
+    if 'sort_order' in data: faq.sort_order = data['sort_order']
+    db.session.commit()
+    return jsonify({'id': faq.id, 'q': faq.question, 'a': faq.answer, 'sort_order': faq.sort_order})
+
+
+@app.route('/api/faqs/<int:faq_id>', methods=['DELETE'])
+@require_admin
+def delete_faq(faq_id):
+    """
+    DELETE /api/faqs/<id>
+    Deletes a FAQ entry.
+    """
+    faq = Faq.query.get_or_404(faq_id)
+    db.session.delete(faq)
+    db.session.commit()
+    return jsonify({'deleted': faq_id})
 
 
 # ============================================================
