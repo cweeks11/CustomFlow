@@ -256,10 +256,10 @@ async function apiFetch(endpoint, options = {}) {
     const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
     // Token expired or invalid — clear storage and redirect to login
     if (res.status === 401) {
+      const wasAdmin = !!localStorage.getItem('admin_token');
       localStorage.removeItem('admin_token');
       localStorage.removeItem('customer_token');
-      window.location.href = localStorage.getItem('admin_token') !== null
-        ? 'admin-login.html' : 'customer-login.html';
+      window.location.href = wasAdmin ? 'admin-login.html' : 'customer-login.html';
       return null;
     }
     const data = await res.json();
