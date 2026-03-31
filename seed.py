@@ -19,6 +19,8 @@ with app.app_context():
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_email BOOLEAN DEFAULT TRUE;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS notify_sms BOOLEAN DEFAULT FALSE;",
             "ALTER TABLE users ADD COLUMN IF NOT EXISTS phone VARCHAR(255);",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;",
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_type VARCHAR(50) DEFAULT 'individual';",
             # orders table
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS customer_notes TEXT;",
             "ALTER TABLE orders ADD COLUMN IF NOT EXISTS admin_notes TEXT;",
@@ -36,23 +38,48 @@ with app.app_context():
             # revisions table
             "ALTER TABLE revisions ADD COLUMN IF NOT EXISTS charge_amount NUMERIC(8,2) DEFAULT 0;",
             "ALTER TABLE revisions ADD COLUMN IF NOT EXISTS mockup_id INTEGER;",
-            # Create invoices table if not exists
+            # invoices table — create then add new columns
             """CREATE TABLE IF NOT EXISTS invoices (
                 id SERIAL PRIMARY KEY,
                 order_id INTEGER REFERENCES orders(id),
                 type VARCHAR(255),
                 label VARCHAR(255),
                 amount NUMERIC(10,2),
-                status VARCHAR(255) DEFAULT 'uploaded',
+                status VARCHAR(255) DEFAULT 'draft',
                 file_url TEXT,
                 uploaded_at TIMESTAMP DEFAULT NOW(),
                 sent_at TIMESTAMP
             );""",
-            # Create settings table if not exists
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS doc_type VARCHAR(20) DEFAULT 'invoice';",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS doc_number VARCHAR(50);",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS line_items TEXT;",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal NUMERIC(10,2);",
+            "ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT;",
+            # faqs table
+            """CREATE TABLE IF NOT EXISTS faqs (
+                id SERIAL PRIMARY KEY,
+                question TEXT,
+                answer TEXT,
+                sort_order INTEGER DEFAULT 0
+            );""",
+            # pricing_tiers table
+            """CREATE TABLE IF NOT EXISTS pricing_tiers (
+                id SERIAL PRIMARY KEY,
+                name TEXT,
+                price_from INTEGER DEFAULT 0,
+                price_label TEXT,
+                description TEXT,
+                sort_order INTEGER DEFAULT 0,
+                is_active BOOLEAN DEFAULT TRUE
+            );""",
+            # settings table
             """CREATE TABLE IF NOT EXISTS settings (
                 key VARCHAR(255) PRIMARY KEY,
                 value TEXT
             );""",
+            # Set order ID sequence to start at 1001 (only takes effect if no orders exist yet,
+            # or bumps it up if current max is below 1000)
+            "SELECT setval('orders_id_seq', GREATEST(1000, (SELECT COALESCE(MAX(id), 1000) FROM orders)));",
         ]
         for sql in migrations:
             try:
