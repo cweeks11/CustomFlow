@@ -91,6 +91,7 @@
 
   // All state variables — populated by loadOrderDetail() below
   let ORDER = {}, CUSTOMER = {}, USERS = {};
+  let detail = {};  // full API response — used by renderDocuments() for invoices
   let custPhotos=[], basePhoots=[], mockupImgs=[], moodboardImgs=[], conceptImgs=[];
   let mockups=[], revisions=[], payments=[], addons=[], statusHist=[], consults=[];
 
@@ -108,6 +109,7 @@
       return;
     }
     const d = result.data;
+    detail     = d;  // make available module-wide for renderDocuments()
     ORDER      = d.order || {};
     CUSTOMER   = d.customer || {};
     USERS[CUSTOMER.id] = CUSTOMER;
