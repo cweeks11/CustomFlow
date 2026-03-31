@@ -328,47 +328,78 @@
 
   async function saveFaqs() {
     const el = document.getElementById('faqSv');
-    // Validate all FAQs have content
-    const valid = faqs.filter(f => (f.q||f.question||'').trim() && (f.a||f.answer||'').trim());
-    if (valid.length !== faqs.length) {
-      showToast('Please fill in all FAQ questions and answers before saving.', 'warning');
+
+    // Read current values from the DOM inputs (not stale faqs array)
+    const inputs = document.querySelectorAll('#faqEdit > div');
+    const currentFaqs = [];
+    inputs.forEach((div, i) => {
+      const qEl = div.querySelector(`#fq_${i}`);
+      const aEl = div.querySelector(`#fa_${i}`);
+      if (qEl && aEl) {
+        const q = qEl.value.trim();
+        const a = aEl.value.trim();
+        if (q || a) currentFaqs.push({ q, a, id: faqs[i]?.id || null });
+      }
+    });
+
+    if (!currentFaqs.length) {
+      showToast('No FAQs to save.', 'warning');
       return;
     }
 
-    // Strategy: delete all existing FAQs then recreate
-    // First get existing IDs
-    const existing = await apiFetch('/api/faqs');
-    if (existing && existing.ok) {
-      // Delete all existing
-      for (const faq of existing.data) {
-        await apiFetch('/api/faqs/' + faq.id, { method: 'DELETE' });
-      }
+    // Validate
+    const incomplete = currentFaqs.filter(f => !f.q || !f.a);
+    if (incomplete.length) {
+      showToast('Please fill in all questions and answers before saving.', 'warning');
+      return;
     }
 
-    // Create all current FAQs in order
     let allOk = true;
-    for (let i = 0; i < valid.length; i++) {
-      const f = valid[i];
-      const res = await apiFetch('/api/faqs', {
-        method: 'POST',
-        body: JSON.stringify({
-          question:   (f.q||f.question||'').trim(),
-          answer:     (f.a||f.answer||'').trim(),
-          sort_order: i,
-        })
-      });
+
+    // For FAQs with an existing id: update via PATCH
+    // For new FAQs (no id): create via POST
+    // Then delete any FAQs that were removed
+    const existingRes = await apiFetch('/api/faqs');
+    const existingIds = existingRes && existingRes.ok ? existingRes.data.map(f => f.id) : [];
+    const keepIds = currentFaqs.filter(f => f.id).map(f => f.id);
+    const toDelete = existingIds.filter(id => !keepIds.includes(id));
+
+    // Delete removed FAQs
+    for (const id of toDelete) {
+      await apiFetch('/api/faqs/' + id, { method: 'DELETE' });
+    }
+
+    // Update or create each FAQ
+    const newFaqs = [];
+    for (let i = 0; i < currentFaqs.length; i++) {
+      const f = currentFaqs[i];
+      let res;
+      if (f.id) {
+        // Update existing
+        res = await apiFetch('/api/faqs/' + f.id, {
+          method: 'PATCH',
+          body: JSON.stringify({ question: f.q, answer: f.a, sort_order: i })
+        });
+      } else {
+        // Create new
+        res = await apiFetch('/api/faqs', {
+          method: 'POST',
+          body: JSON.stringify({ question: f.q, answer: f.a, sort_order: i })
+        });
+      }
       if (!res || !res.ok) { allOk = false; }
+      else { newFaqs.push(res.data); }
     }
 
     if (allOk) {
-      el.style.display='inline';
-      setTimeout(()=>el.style.display='none', 3000);
-      showToast('FAQs saved to database!');
-      // Reload to get real IDs
+      el.style.display = 'inline';
+      setTimeout(() => el.style.display = 'none', 3000);
+      showToast('FAQs saved!');
+      // Reload from DB to sync IDs
       const reloaded = await apiFetch('/api/faqs');
-      if (reloaded && reloaded.ok) faqs = reloaded.data;
+      if (reloaded && reloaded.ok) { faqs = reloaded.data; renderFaqEdit(); }
     } else {
-      showToast('Some FAQs failed to save', 'error');
+      showToast('Some FAQs failed to save — please try again.', 'error');
     }
   }
 
