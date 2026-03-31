@@ -1,3 +1,5 @@
+<!DOCTYPE html>
+<html lang="en">
 <!--
   PAGE: Admin Production Queue (admin-queue.html)
   ============================================================
@@ -7,26 +9,8 @@
       1. Approved rush orders (soonest deadline first)
       2. Date-specific orders with a must_have_by date (soonest first)
       3. Standard FIFO — sorted by booking fee payment date
-
-  WHAT'S ON THIS PAGE:
-    - "Currently Working On" — the #1 order in the active queue (big hero card)
-    - "Active Queue" — all orders in production_queue / prep / painting
-    - "Paid Waitlist — Up Next" — paid_waitlist orders waiting to enter production
-    - Priority legend explaining the three tiers
-
-  KEY FUNCTIONS:
-    buildQueue()   — calls buildProductionQueue() from core.js to get the
-                     sorted arrays, then renders both sections
-    renderCard()   — builds a full queue card for one order
-    priorityBadge()— returns a colored pill showing which tier the order is in
-
-  BACKEND TODO:
-    buildQueue()   → GET /api/queue
-                     Returns { active: [...], waiting: [...] } pre-sorted by SQL
   ============================================================
 -->
-<!DOCTYPE html>
-<html lang="en">
 <head>
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Production Queue — Cope Aesthetic Customs</title>
@@ -198,8 +182,8 @@
     return `<span style="color:${color};font-weight:${days<=14?'700':'400'};">${urgency} · Due ${formatDate(order.must_have_by)}</span>`;
   }
   function renderHeroCard(order) {
-    const u = USERS[order.user_id] || {};
-    const payments = []; // payments loaded per-order in detail view
+    const name = order.customer_name || '—';
+    const payments = [];
     const totalPaid = payments.reduce((s, p) => s + parseFloat(p.amount), 0);
 
     return `
@@ -209,7 +193,7 @@
           <div>
             <div class="hero-order-name">${order.item_type} — #${order.id}</div>
             <div class="hero-meta">
-              <span>👤 ${u.name || '—'}</span>
+              <span>👤 ${name}</span>
               <span>🎨 <span style="text-transform:capitalize;">${order.pricing_tier}</span></span>
               ${order.must_have_by ? `<span>${deadlineDisplay(order)}</span>` : ''}
               ${order.is_rush && order.rush_approved ? `<span style="color:var(--warn);font-weight:700;">⚡ RUSH APPROVED</span>` : ''}
@@ -229,32 +213,25 @@
       </div>`;
   }
   function renderCard(order, position, isWaiting = false) {
-    const u = USERS[order.user_id] || {};
+    const name = order.customer_name || '—';
     const cardClass = order.is_rush && order.rush_approved ? 'rush'
                     : order.must_have_by ? 'dated' : '';
 
     return `
       <div class="queue-card ${cardClass}" onclick="window.location='admin-order-detail.html?id=${order.id}'">
-        <!-- Position number badge -->
         <div class="q-pos">${position}</div>
-
-        <!-- Priority badge -->
         <div style="flex-shrink:0;">${priorityBadge(order)}</div>
-
-        <!-- Main info -->
         <div style="flex:1;min-width:0;">
           <div style="font-size:15px;font-weight:700;margin-bottom:3px;text-transform:uppercase;letter-spacing:0.5px;">
             ${order.item_type} <span style="color:var(--txt-m);font-size:12px;font-weight:400;">#${order.id}</span>
           </div>
           <div style="font-size:12px;color:var(--txt-m);display:flex;gap:14px;flex-wrap:wrap;">
-            <span>👤 ${u.name || '—'}</span>
+            <span>👤 ${name}</span>
             <span style="text-transform:capitalize;">🎨 ${order.pricing_tier}</span>
             ${order.must_have_by ? `<span>${deadlineDisplay(order)}</span>` : '<span>No deadline</span>'}
           </div>
           ${order.customer_notes ? `<div style="font-size:12px;color:var(--txt-d);margin-top:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:400px;font-style:italic;">${order.customer_notes.slice(0, 80)}${order.customer_notes.length > 80 ? '...' : ''}</div>` : ''}
         </div>
-
-        <!-- Status + action -->
         <div style="display:flex;flex-direction:column;align-items:flex-end;gap:8px;flex-shrink:0;">
           ${statusBadge(order.status)}
           ${isWaiting
@@ -262,8 +239,6 @@
             : `<span style="font-size:11px;color:var(--txt-d);">Started ${timeAgo(order.updated_at)}</span>`
           }
         </div>
-
-        <!-- Chevron -->
         <div style="color:var(--txt-d);font-size:18px;flex-shrink:0;">›</div>
       </div>`;
   }
