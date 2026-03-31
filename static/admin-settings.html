@@ -202,58 +202,192 @@
   }
 
   // ---- USERS ----
+  let userTab = 'customers'; // 'customers' | 'admins'
+
   async function buildUsers(el) {
-    // Load real admin users from API
-    let users = [];
-    const usersRes = await apiFetch('/api/users');
-    if (usersRes && usersRes.ok) users = usersRes.data || [];
+    const res = await apiFetch('/api/users');
+    const allUsers = (res && res.ok) ? res.data : [];
+    const customers = allUsers.filter(u => u.role === 'customer');
+    const admins    = allUsers.filter(u => u.role !== 'customer');
+    const current   = userTab === 'customers' ? customers : admins;
+    const me        = JSON.parse(localStorage.getItem('admin_user')||'{}');
+
     el.innerHTML = `
-      <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
-        <button class="btn btn-mg btn-sm" onclick="openAddUser()">+ Add Admin User</button>
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:16px;">
+        <div style="display:flex;gap:8px;">
+          <button class="btn btn-sm ${userTab==='customers'?'btn-mg':'btn-out'}" onclick="userTab='customers';buildUsers(document.getElementById('ab-inner-users'))">
+            Customers (${customers.length})
+          </button>
+          <button class="btn btn-sm ${userTab==='admins'?'btn-mg':'btn-out'}" onclick="userTab='admins';buildUsers(document.getElementById('ab-inner-users'))">
+            Admin / Staff (${admins.length})
+          </button>
+        </div>
+        <button class="btn btn-mg btn-sm" onclick="openAddUser()">+ Add User</button>
       </div>
       <div class="tbl-wrap">
         <table>
-          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Phone</th><th>Joined</th><th>Actions</th></tr></thead>
+          <thead><tr><th>Name</th><th>Email</th><th>Phone</th><th>Type</th><th>Role</th><th>Status</th><th>Joined</th><th>Actions</th></tr></thead>
           <tbody>
-            ${users.map(u=>`<tr>
+            ${current.map(u=>{
+              const ct = u.customer_type||'individual';
+              const SPECIAL = {group:'👥 Group',influencer:'⭐ Influencer',nonprofit:'🤝 Non-Profit',organization:'🏢 Org'};
+              const typeBadge = SPECIAL[ct]
+                ? `<span style="display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:rgba(231,167,51,0.12);border:1px solid rgba(231,167,51,0.25);font-size:10px;font-weight:700;color:var(--gld);">${SPECIAL[ct]}</span>`
+                : `<span style="font-size:11px;color:var(--txt-d);">Individual</span>`;
+              return `<tr style="${!u.is_active?'opacity:0.5;':''}">
               <td><strong>${u.name}</strong></td>
               <td style="font-size:12px;color:var(--txt-m);">${u.email}</td>
-              <td><span style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${u.role==='owner'?'var(--gld)':'var(--chr)'};">${u.role}</span></td>
               <td style="font-size:12px;color:var(--txt-m);">${u.phone||'—'}</td>
+              <td>${typeBadge}</td>
+              <td><span style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${u.role==='owner'?'var(--gld)':u.role==='employee'?'var(--chr)':'var(--txt-m)'};">${u.role}</span></td>
+              <td>${u.is_active!==false
+                ? '<span style="color:var(--ok);font-size:11px;font-weight:700;">Active</span>'
+                : '<span style="color:var(--err);font-size:11px;font-weight:700;">Deactivated</span>'}</td>
               <td>${formatDate(u.created_at)}</td>
-              <td><button class="btn btn-err btn-sm" onclick="removeUser(${u.id})" ${u.role==='owner'?'disabled':''}>Remove</button></td>
-            </tr>`).join('')}
+              <td style="display:flex;gap:6px;flex-wrap:wrap;">
+                <button class="btn btn-sm btn-out" onclick="openEditUser(${u.id},'${u.name.replace(/'/g,"\'")}','${u.email}','${u.phone||''}','${u.role}',${u.is_active!==false},'${ct}')">Edit</button>
+                ${u.is_active!==false
+                  ? `<button class="btn btn-sm" style="background:rgba(232,160,32,0.15);color:var(--warn);border-color:rgba(232,160,32,0.3);" onclick="toggleUserActive(${u.id},false)">Deactivate</button>`
+                  : `<button class="btn btn-sm btn-out" onclick="toggleUserActive(${u.id},true)">Activate</button>`}
+                ${u.id!==me.id?`<button class="btn btn-sm btn-err" onclick="deleteUser(${u.id},'${u.name.replace(/'/g,"\'")}')">Delete</button>`:''}
+              </td>
+            </tr>`}).join('')}
           </tbody>
         </table>
       </div>`;
   }
 
   function openAddUser() {
-    const modal=document.createElement('div'); modal.className='overlay open'; modal.id='userModal';
-    modal.innerHTML=`<div class="modal">
+    const modal = document.createElement('div');
+    modal.className = 'overlay open';
+    modal.id = 'userModal';
+    modal.innerHTML = `<div class="modal">
       <button class="modal-x" onclick="document.getElementById('userModal').remove()">✕</button>
-      <div class="modal-title">Add Admin User</div>
+      <div class="modal-title">Add New User</div>
       <div class="fg"><label class="fl">Full Name</label><input type="text" class="fc" id="uName" placeholder="Jane Doe"/></div>
-      <div class="fg"><label class="fl">Email</label><input type="email" class="fc" id="uEmail" placeholder="jane@copeaesthetic.com"/></div>
+      <div class="fg"><label class="fl">Email</label><input type="email" class="fc" id="uEmail" placeholder="jane@email.com"/></div>
+      <div class="fg"><label class="fl">Phone</label><input type="text" class="fc" id="uPhone" placeholder="(555) 000-0000"/></div>
       <div class="fg"><label class="fl">Role</label>
-        <select class="fc" id="uRole"><option value="employee">Employee</option><option value="owner">Owner</option></select>
+        <select class="fc" id="uRole">
+          <option value="customer">Customer</option>
+          <option value="employee">Employee</option>
+          <option value="owner">Owner</option>
+        </select>
       </div>
-      <div class="fg"><label class="fl">Temporary Password</label><input type="password" class="fc" id="uPw" placeholder="••••••••"/></div>
+      <div class="fg"><label class="fl">Temporary Password</label><input type="password" class="fc" id="uPw" placeholder="Min 6 characters"/></div>
       <button class="btn btn-mg" style="width:100%;justify-content:center;margin-top:8px;" onclick="addUser()">Create User</button>
     </div>`;
     document.body.appendChild(modal);
   }
 
-  function addUser() {
-    showToast('User created! (connects to backend when ready)');
-    document.getElementById('userModal').remove();
+  async function addUser() {
+    const name  = document.getElementById('uName').value.trim();
+    const email = document.getElementById('uEmail').value.trim();
+    const phone = document.getElementById('uPhone').value.trim();
+    const role  = document.getElementById('uRole').value;
+    const pw    = document.getElementById('uPw').value;
+    if (!name || !email || !pw) { showToast('Name, email and password required.', 'warning'); return; }
+    if (pw.length < 6) { showToast('Password must be at least 6 characters.', 'warning'); return; }
+    const res = await apiFetch('/api/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password: pw, phone, role })
+    });
+    if (res && res.ok) {
+      // Update role if not customer (register defaults to customer)
+      if (role !== 'customer') {
+        await apiFetch('/api/users/' + res.data.user.id, {
+          method: 'PATCH',
+          body: JSON.stringify({ role })
+        });
+      }
+      showToast('User created!');
+      document.getElementById('userModal').remove();
+      buildUsers(document.getElementById('ab-inner-users'));
+    } else {
+      showToast(res?.data?.error || 'Failed to create user.', 'error');
+    }
   }
 
-  function removeUser(id) {
-    if(!confirm('Remove this admin user?')) return;
-    showToast('User removed. (connects to backend when ready)');
-    buildUsers(document.getElementById('ab-inner-users'));
+  function openEditUser(id, name, email, phone, role, isActive, customerType='individual') {
+    const modal = document.createElement('div');
+    modal.className = 'overlay open';
+    modal.id = 'editUserModal';
+    const ctOpts = [
+      ['individual','Individual / Personal'],
+      ['group','Group'],
+      ['influencer','Influencer / Content Creator'],
+      ['nonprofit','Non-Profit Organization'],
+      ['organization','Organization / Business'],
+    ].map(([v,l])=>`<option value="${v}" ${customerType===v?'selected':''}>${l}</option>`).join('');
+    modal.innerHTML = `<div class="modal">
+      <button class="modal-x" onclick="document.getElementById('editUserModal').remove()">✕</button>
+      <div class="modal-title">Edit User</div>
+      <div class="fg"><label class="fl">Full Name</label><input type="text" class="fc" id="euName" value="${name}"/></div>
+      <div class="fg"><label class="fl">Email</label><input type="email" class="fc" id="euEmail" value="${email}"/></div>
+      <div class="fg"><label class="fl">Phone</label><input type="text" class="fc" id="euPhone" value="${phone}"/></div>
+      <div class="fg"><label class="fl">Role</label>
+        <select class="fc" id="euRole">
+          <option value="customer" ${role==='customer'?'selected':''}>Customer</option>
+          <option value="employee" ${role==='employee'?'selected':''}>Employee</option>
+          <option value="owner" ${role==='owner'?'selected':''}>Owner</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">Account Type</label>
+        <select class="fc" id="euType">${ctOpts}</select>
+      </div>
+      <button class="btn btn-gld" style="width:100%;justify-content:center;margin-top:8px;" onclick="saveEditUser(${id})">Save Changes</button>
+    </div>`;
+    document.body.appendChild(modal);
   }
+
+  async function saveEditUser(id) {
+    const res = await apiFetch('/api/users/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({
+        name:          document.getElementById('euName').value.trim(),
+        email:         document.getElementById('euEmail').value.trim(),
+        phone:         document.getElementById('euPhone').value.trim(),
+        role:          document.getElementById('euRole').value,
+        customer_type: document.getElementById('euType').value,
+      })
+    });
+    if (res && res.ok) {
+      showToast('User updated!');
+      document.getElementById('editUserModal').remove();
+      buildUsers(document.getElementById('ab-inner-users'));
+    } else {
+      showToast(res?.data?.error || 'Failed to update user.', 'error');
+    }
+  }
+
+  async function toggleUserActive(id, active) {
+    const action = active ? 'activate' : 'deactivate';
+    if (!confirm(`${active?'Activate':'Deactivate'} this account?`)) return;
+    const res = await apiFetch('/api/users/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({ is_active: active })
+    });
+    if (res && res.ok) {
+      showToast(`Account ${action}d.`);
+      buildUsers(document.getElementById('ab-inner-users'));
+    } else {
+      showToast('Failed to update account.', 'error');
+    }
+  }
+
+  async function deleteUser(id, name) {
+    if (!confirm(`Permanently delete ${name}'s account? This cannot be undone.`)) return;
+    const res = await apiFetch('/api/users/' + id, { method: 'DELETE' });
+    if (res && res.ok) {
+      showToast('Account deleted.');
+      buildUsers(document.getElementById('ab-inner-users'));
+    } else {
+      showToast(res?.data?.error || 'Failed to delete account.', 'error');
+    }
+  }
+
+  // Keep legacy removeUser for compatibility
+  function removeUser(id) { deleteUser(id, 'this user'); }
 
   // ---- NOTIFICATIONS ----
   function buildNotifs(el) {
@@ -404,22 +538,118 @@
   }
 
   // ---- PRICING ----
-  function buildPricing(el) {
+  let pricingTiers = [];
+
+  async function buildPricing(el) {
+    // Load from API
+    try {
+      const res = await apiFetch('/api/pricing_tiers/all');
+      if (res && res.ok) pricingTiers = res.data || [];
+    } catch(e) {}
+
     el.innerHTML = `
-      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">These pricing tiers are displayed on the Terms & FAQs page that customers must read before registering.</div>
-      <div class="tbl-wrap">
-        <table>
-          <thead><tr><th>Tier</th><th>Starting Price</th><th>Description</th></tr></thead>
-          <tbody>
-            ${PRICING_TIERS.concat([{tier:'Cleaning Fee', price_from:25, desc:'Pre-loved items'},{tier:'Extra Revision', price_from:20, desc:'Beyond 3 free'}]).map(p=>`<tr>
-              <td><strong>${p.tier}</strong></td>
-              <td style="color:var(--gld);font-weight:700;">${p.price_from?'$'+p.price_from+'+':'Varies'}</td>
-              <td style="font-size:12px;color:var(--txt-m);">${p.desc}</td>
-            </tr>`).join('')}
-          </tbody>
-        </table>
-      </div>
-      <div style="margin-top:14px;font-size:12px;color:var(--txt-d);">Contact your developer to update pricing tiers — these are currently stored in core.js.</div>`;
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">These pricing tiers appear on the Terms & FAQs page. Customers see them before registering.</div>
+      <div id="pricingEdit"></div>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <button class="btn btn-out btn-sm" onclick="addPricingTier()">+ Add Tier</button>
+        <button class="btn btn-gld" onclick="savePricingTiers()">Save All Tiers</button>
+        <span id="priceSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+      </div>`;
+    renderPricingEdit();
+  }
+
+  function renderPricingEdit() {
+    const el = document.getElementById('pricingEdit');
+    if (!el) return;
+    el.innerHTML = pricingTiers.map((t,i) => `
+      <div style="background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:14px;margin-bottom:10px;${!t.is_active?'opacity:0.5;':''}">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+          <span style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-d);">Tier ${i+1}</span>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-sm btn-out" onclick="togglePricingActive(${i})">${t.is_active!==false?'Hide':'Show'}</button>
+            <button class="btn btn-sm btn-err" onclick="removePricingTier(${i})">Remove</button>
+          </div>
+        </div>
+        <div class="g2" style="margin-bottom:10px;">
+          <div class="fg">
+            <label class="fl">Tier Name</label>
+            <input type="text" class="fc" id="pt_name_${i}" value="${(t.name||'').replace(/"/g,'&quot;')}" oninput="pricingTiers[${i}].name=this.value"/>
+          </div>
+          <div class="fg">
+            <label class="fl">Price Label (e.g. $75+ or Varies)</label>
+            <input type="text" class="fc" id="pt_label_${i}" value="${(t.price_label||'').replace(/"/g,'&quot;')}" oninput="pricingTiers[${i}].price_label=this.value"/>
+          </div>
+        </div>
+        <div class="fg" style="margin-bottom:0;">
+          <label class="fl">Description</label>
+          <textarea class="fc" rows="2" id="pt_desc_${i}" oninput="pricingTiers[${i}].description=this.value">${t.description||''}</textarea>
+        </div>
+      </div>`).join('') || '<div style="font-size:13px;color:var(--txt-d);padding:20px 0;">No pricing tiers yet. Click + Add Tier to create one.</div>';
+  }
+
+  function addPricingTier() {
+    pricingTiers.push({ name:'', price_label:'', description:'', is_active:true, id:null });
+    renderPricingEdit();
+  }
+
+  function removePricingTier(i) {
+    pricingTiers.splice(i, 1);
+    renderPricingEdit();
+  }
+
+  function togglePricingActive(i) {
+    pricingTiers[i].is_active = !pricingTiers[i].is_active;
+    renderPricingEdit();
+  }
+
+  async function savePricingTiers() {
+    const el = document.getElementById('priceSv');
+
+    // Read current values from DOM
+    pricingTiers.forEach((t, i) => {
+      const nameEl  = document.getElementById(`pt_name_${i}`);
+      const labelEl = document.getElementById(`pt_label_${i}`);
+      const descEl  = document.getElementById(`pt_desc_${i}`);
+      if (nameEl)  t.name        = nameEl.value.trim();
+      if (labelEl) t.price_label = labelEl.value.trim();
+      if (descEl)  t.description = descEl.value.trim();
+    });
+
+    const valid = pricingTiers.filter(t => t.name.trim());
+    if (!valid.length) { showToast('Please add at least one pricing tier.', 'warning'); return; }
+
+    let allOk = true;
+    const saved = [];
+
+    for (let i = 0; i < pricingTiers.length; i++) {
+      const t = pricingTiers[i];
+      if (!t.name.trim()) continue;
+      let res;
+      if (t.id) {
+        res = await apiFetch('/api/pricing_tiers/' + t.id, {
+          method: 'PATCH',
+          body: JSON.stringify({ name: t.name, price_label: t.price_label, description: t.description, is_active: t.is_active!==false, sort_order: i })
+        });
+      } else {
+        res = await apiFetch('/api/pricing_tiers', {
+          method: 'POST',
+          body: JSON.stringify({ name: t.name, price_label: t.price_label, description: t.description, is_active: t.is_active!==false, sort_order: i })
+        });
+      }
+      if (!res || !res.ok) allOk = false;
+      else saved.push(res.data);
+    }
+
+    if (allOk) {
+      el.style.display = 'inline';
+      setTimeout(() => el.style.display = 'none', 3000);
+      showToast('Pricing tiers saved!');
+      // Reload to sync IDs
+      const reloaded = await apiFetch('/api/pricing_tiers/all');
+      if (reloaded && reloaded.ok) { pricingTiers = reloaded.data; renderPricingEdit(); }
+    } else {
+      showToast('Some tiers failed to save — please try again.', 'error');
+    }
   }
 
 
