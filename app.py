@@ -304,15 +304,25 @@ class Invoice(db.Model):
 
 
 class Setting(db.Model):
-    # Stores key/value pairs for app settings like booking status.
-    # NOTE: Create this table on Railway:
-    # CREATE TABLE settings (
-    #   key VARCHAR(255) PRIMARY KEY,
-    #   value TEXT
-    # );
     __tablename__ = 'settings'
     key   = db.Column(db.String(255), primary_key=True)
     value = db.Column(db.Text)
+
+
+class Faq(db.Model):
+    __tablename__ = 'faqs'
+    id         = db.Column(db.Integer, primary_key=True)
+    question   = db.Column(db.Text, nullable=False)
+    answer     = db.Column(db.Text, nullable=False)
+    sort_order = db.Column(db.Integer, default=0)
+
+    def to_dict(self):
+        return {
+            'id':         self.id,
+            'question':   self.question,
+            'answer':     self.answer,
+            'sort_order': self.sort_order,
+        }
 
 
 # ============================================================
