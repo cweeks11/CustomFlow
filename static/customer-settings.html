@@ -60,6 +60,16 @@
       <div class="fg"><label class="fl">Email Address</label><input type="email" class="fc" id="email" placeholder="you@email.com"/></div>
       <div class="fg"><label class="fl">Phone Number</label><input type="tel" class="fc" id="phone" placeholder="(803) 555-0000"/></div>
     </div>
+    <div class="fg"><label class="fl">Account Type</label>
+      <select class="fc" id="customerType">
+        <option value="individual">Individual / Personal</option>
+        <option value="group">Group (e.g. team, club, family)</option>
+        <option value="influencer">Influencer / Content Creator</option>
+        <option value="nonprofit">Non-Profit Organization</option>
+        <option value="organization">Organization / Business</option>
+      </select>
+      <div style="font-size:11px;color:var(--txt-d);margin-top:5px;">Groups, influencers, and organizations may qualify for special pricing — Buffy will reach out.</div>
+    </div>
     <div class="fg"><label class="fl">Shipping Address (optional)</label>
       <input type="text" class="fc" id="addr" placeholder="123 Main St, Columbia, SC 29201"/>
     </div>
@@ -125,21 +135,23 @@
   document.getElementById('email').value=user.email||'';
   if(user.phone) document.getElementById('phone').value=user.phone;
   if(user.notify_sms) document.getElementById('notifSms').checked=user.notify_sms;
+  if(user.customer_type) document.getElementById('customerType').value=user.customer_type;
   const fn=parts[0]||'J';
   document.getElementById('navAv').textContent=fn[0].toUpperCase();
 
   async function saveProfile(){
-    const name = document.getElementById('fn').value.trim() + ' ' + document.getElementById('ln').value.trim();
-    const phone = document.getElementById('phone').value.trim();
-    const notify_email = document.getElementById('notifEmail')?.checked ?? true;
-    const notify_sms = document.getElementById('notifSms')?.checked ?? false;
+    const name          = document.getElementById('fn').value.trim() + ' ' + document.getElementById('ln').value.trim();
+    const phone         = document.getElementById('phone').value.trim();
+    const notify_email  = document.getElementById('notifEmail')?.checked ?? true;
+    const notify_sms    = document.getElementById('notifSms')?.checked ?? false;
+    const customer_type = document.getElementById('customerType')?.value || 'individual';
     const result = await apiFetch('/api/users/me', {
       method: 'PATCH',
-      body: JSON.stringify({ name, phone, notify_email, notify_sms }),
+      body: JSON.stringify({ name, phone, notify_email, notify_sms, customer_type }),
     });
     const el = document.getElementById('profSv');
     if (result && result.ok) {
-      const updUser = { ...user, name, phone, notify_email, notify_sms };
+      const updUser = { ...user, name, phone, notify_email, notify_sms, customer_type };
       localStorage.setItem('customer_user', JSON.stringify(updUser));
       el.style.display='inline'; setTimeout(()=>el.style.display='none',3000);
       showToast('Profile saved!');
