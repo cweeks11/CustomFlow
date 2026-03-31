@@ -539,6 +539,7 @@
 
   // ---- PRICING ----
   let pricingTiers = [];
+  let _deletedTierIds = [];  // track IDs deleted this session so we can DELETE them on save
 
   async function buildPricing(el) {
     // Load from API
@@ -546,6 +547,7 @@
       const res = await apiFetch('/api/pricing_tiers/all');
       if (res && res.ok) pricingTiers = res.data || [];
     } catch(e) {}
+    _deletedTierIds = [];
 
     el.innerHTML = `
       <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">These pricing tiers appear on the Terms & FAQs page. Customers see them before registering.</div>
@@ -592,9 +594,20 @@
     renderPricingEdit();
   }
 
-  function removePricingTier(i) {
+  async function removePricingTier(i) {
+    const t = pricingTiers[i];
+    if (!confirm(`Remove "${t.name || 'this tier'}"? This will delete it from the database immediately.`)) return;
+    // If it has a real DB id, delete it from the server right now
+    if (t.id) {
+      const res = await apiFetch('/api/pricing_tiers/' + t.id, { method: 'DELETE' });
+      if (!res || !res.ok) {
+        showToast('Failed to delete tier — please try again.', 'error');
+        return;
+      }
+    }
     pricingTiers.splice(i, 1);
     renderPricingEdit();
+    showToast('Tier removed.');
   }
 
   function togglePricingActive(i) {
@@ -619,7 +632,6 @@
     if (!valid.length) { showToast('Please add at least one pricing tier.', 'warning'); return; }
 
     let allOk = true;
-    const saved = [];
 
     for (let i = 0; i < pricingTiers.length; i++) {
       const t = pricingTiers[i];
@@ -637,7 +649,6 @@
         });
       }
       if (!res || !res.ok) allOk = false;
-      else saved.push(res.data);
     }
 
     if (allOk) {
