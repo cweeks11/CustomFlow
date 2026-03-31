@@ -71,12 +71,26 @@
 
 <script>
 
+  // Support admin "Customer View" preview — if preview_token is in URL, use it instead of stored token
+  const params = new URLSearchParams(location.search);
+  const _previewToken = params.get('preview_token');
+  if (_previewToken) {
+    // Store temporarily for this page's apiFetch calls
+    window._adminPreviewMode = true;
+    localStorage.setItem('customer_token', _previewToken);
+    // Show admin preview banner
+    const banner = document.createElement('div');
+    banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#2c3e50;color:#f39c12;text-align:center;padding:8px 16px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;';
+    banner.innerHTML = '👁 Admin Preview Mode — Viewing as Customer &nbsp;·&nbsp; <a href="javascript:window.close()" style="color:#e74c3c;text-decoration:underline;">Close Tab</a>';
+    document.body.prepend(banner);
+    document.querySelector('.page').style.marginTop = '34px';
+  }
+
   requireCustomerAuth();
   const user = JSON.parse(localStorage.getItem('customer_user')||'{}');
-  const fn = (user.name||'').split(' ')[0];
-  document.getElementById('navAv').textContent = fn[0].toUpperCase();
+  const fn = (user.name||'C').split(' ')[0];
+  document.getElementById('navAv').textContent = (fn[0]||'C').toUpperCase();
 
-  const params = new URLSearchParams(location.search);
   const OID = parseInt(params.get('id'));
   if (!OID) { window.location.href = 'customer-portal.html'; }
 
@@ -96,8 +110,12 @@
   const statusHist = detail.status_history || [];
   const consults   = detail.consult_calls || [];
   const addons     = detail.add_ons || [];
-  const refImgs    = (detail.order_images||[]).filter(i=>i.type==='reference');
-  const mockImgs   = (detail.order_images||[]).filter(i=>i.type==='mockup');
+  const refImgs       = (detail.order_images||[]).filter(i=>i.type==='reference');
+  const mockImgs      = (detail.order_images||[]).filter(i=>i.type==='mockup');
+  const moodboardImgs = (detail.order_images||[]).filter(i=>i.type==='moodboard');
+  const conceptImgs   = (detail.order_images||[]).filter(i=>i.type==='concept_art');
+  // Get the latest mockup object for approval status
+  const latestMockup  = mockups.length ? mockups[mockups.length - 1] : null;
 
   const pip = ['free_waitlist','paid_waitlist','production_queue','prep','painting','completed','shipped','closed'];
 
@@ -183,7 +201,7 @@
 
       <!-- INVOICES FROM BUFFY -->
       <div class="card" style="margin-bottom:18px;">
-        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Invoices from Buffy</div></div>
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Documents from Buffy</div></div>
         <div id="custInvoices"></div>
       </div>
 
@@ -207,22 +225,68 @@
         </div>
       </div>
 
-      <!-- REFERENCE PHOTOS + MOCKUPS -->
-      <div class="g2" style="margin-bottom:18px;">
-        <div class="card">
-          <div class="card-head">
-            <div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>My Reference Photos</div>
-            <label class="btn btn-out btn-sm" style="cursor:pointer;">+ Add Photos<input type="file" accept="image/*" multiple style="display:none;" onchange="addRefPhotos(event)"/></label>
-          </div>
-          <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Upload inspiration photos, references, or logos for Buffy.</div>
-          <div class="gallery" id="refGal"><div class="gmt">No reference photos yet.</div></div>
+      <!-- MY REFERENCE PHOTOS -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-head">
+          <div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>My Reference Photos</div>
+          <label class="btn btn-out btn-sm" style="cursor:pointer;">+ Add Photos<input type="file" accept="image/*" multiple style="display:none;" onchange="addRefPhotos(event)"/></label>
         </div>
-        <div class="card">
-          <div class="card-head"><div class="card-title"><span class="card-dot"></span>Design Mockups from Buffy</div></div>
-          <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Buffy will upload mockups here for your approval before painting begins.</div>
-          <div class="gallery" id="mockupGal"><div class="gmt">No mockups yet. Buffy will upload when ready.</div></div>
-          ${mockupApproved?`<div style="margin-top:10px;padding:8px 12px;background:rgba(46,204,113,0.1);border:1px solid rgba(46,204,113,0.25);border-radius:5px;font-size:12px;color:var(--ok);">✅ You have approved the design. Painting in progress!</div>`:''}
-        </div>
+        <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Upload inspiration photos, references, or logos for Buffy to reference.</div>
+        <div class="gallery" id="refGal"><div class="gmt">No reference photos yet.</div></div>
+      </div>
+
+      <!-- MOODBOARD FROM BUFFY -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--mg);"></span>Moodboard</div></div>
+        <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Buffy will share the overall aesthetic direction and color palette here.</div>
+        <div class="gallery" id="moodboardGal"><div class="gmt">Moodboard not uploaded yet.</div></div>
+      </div>
+
+      <!-- CONCEPT ART FROM BUFFY -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--vio-l);"></span>Concept Art</div></div>
+        <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Initial design sketches from Buffy — a preview of the creative direction.</div>
+        <div class="gallery" id="conceptGal"><div class="gmt">Concept art not uploaded yet.</div></div>
+      </div>
+
+      <!-- MOCKUP + APPROVAL -->
+      <div class="card" style="margin-bottom:18px;">
+        <div class="card-head"><div class="card-title"><span class="card-dot"></span>Final Mockup — Your Approval Required</div></div>
+        <div style="font-size:12px;color:var(--txt-m);margin-bottom:14px;">Buffy will upload the final design mockup here. You must approve before painting begins. You get 3 free revision requests.</div>
+        <div class="gallery" id="mockupGal"><div class="gmt">Mockup not uploaded yet. Buffy will share when ready.</div></div>
+
+        ${mockups.length > 0 ? (() => {
+          const latest = mockups[mockups.length - 1];
+          if (latest.approved) {
+            return `<div style="margin-top:14px;padding:12px 16px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:8px;display:flex;align-items:center;gap:10px;">
+              <span style="font-size:20px;">✅</span>
+              <div>
+                <div style="font-size:13px;font-weight:700;color:var(--ok);">You approved this design!</div>
+                <div style="font-size:11px;color:var(--txt-d);">Buffy can now begin painting. ${latest.approval_at ? 'Approved ' + formatDate(latest.approval_at) : ''}</div>
+              </div>
+            </div>`;
+          } else {
+            return `<div style="margin-top:14px;padding:14px 16px;background:rgba(242,23,165,0.05);border:1px solid rgba(242,23,165,0.15);border-radius:8px;">
+              <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mg);margin-bottom:10px;">⏳ Awaiting Your Approval</div>
+              <div style="font-size:13px;color:var(--txt-m);margin-bottom:14px;">Review the mockup above. Once you approve, Buffy will begin painting. If you'd like changes, describe them below.</div>
+              <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+                <button class="btn btn-mg" onclick="approveMockup(${latest.id}, true)">✅ Approve & Let Buffy Paint</button>
+                <button class="btn btn-out" onclick="openRequestChanges(${latest.id})">✏️ Request Changes</button>
+              </div>
+              <div id="changesForm_${latest.id}" style="display:none;">
+                <div class="fg">
+                  <label class="fl">What would you like changed? <span style="color:var(--err);">*</span></label>
+                  <textarea class="fc" id="changesNote_${latest.id}" rows="3" placeholder="Please describe exactly what you'd like adjusted — colors, proportions, details, etc."></textarea>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:8px;">
+                  <button class="btn btn-gld" onclick="submitChanges(${latest.id})">Submit Revision Request</button>
+                  <button class="btn btn-out btn-sm" onclick="document.getElementById('changesForm_${latest.id}').style.display='none'">Cancel</button>
+                </div>
+                <div style="font-size:11px;color:var(--txt-d);margin-top:8px;">Revision ${usedRevs+1} of 3 free · ${usedRevs >= 3 ? '<span style=\"color:var(--warn)\">Additional revisions are $20 each</span>' : 'This revision is free'}</div>
+              </div>
+            </div>`;
+          }
+        })() : ''}
       </div>
 
       <!-- REVISIONS -->
@@ -270,7 +334,9 @@
 
     // Render galleries
     renderGal('refGal', myRefPhotos, true);
-    renderGal('mockupGal', mockImgs.filter(i=>i.url).map(i=>i.url), false);
+    renderGal('mockupGal',    mockImgs.filter(i=>i.url).map(i=>i.url), false);
+    renderGal('moodboardGal', moodboardImgs.filter(i=>i.url).map(i=>i.url), false);
+    renderGal('conceptGal',   conceptImgs.filter(i=>i.url).map(i=>i.url), false);
   }
 
   function crow(label, val, cap=false) {
@@ -327,34 +393,123 @@
     render(); showToast('Revision request sent to Buffy!');
   }
 
-  // renderCustInvoices() — shows all invoices Buffy has sent to this customer.
-  // Each sent invoice shows the label, amount, sent date, and a download link.
-  // Invoices that haven't been sent yet don't appear here (customer only sees sent ones).
-  // In production: GET /api/orders/:id/invoices returns only status='sent' invoices.
+  // renderCustInvoices() — shows all estimates, invoices, and receipts Buffy has sent.
+  // Documents are grouped by type and show the doc number (e.g. 20261011I).
+  // Customers only see docs with status='sent'. Admins in preview mode see all.
   function renderCustInvoices() {
     const el = document.getElementById('custInvoices');
     if (!el) return;
-    const invoices = detail.invoices ? detail.invoices.filter(i => i.status === 'sent') : [];
-    if (!invoices.length) {
-      el.innerHTML = `<div style="font-size:13px;color:var(--txt-d);padding:4px 0;">No invoices sent yet. Buffy will send your invoice once she's reviewed your order.</div>`;
+    const docs = (detail.invoices || []).filter(d => d.status === 'sent');
+    if (!docs.length) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--txt-d);padding:4px 0;">No documents sent yet. Buffy will send your estimate or invoice once she's reviewed your order.</div>`;
       return;
     }
-    el.innerHTML = invoices.map(inv => `
-      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;padding:12px 0;border-bottom:1px solid var(--b1);">
-        <div>
-          <div style="font-size:13px;font-weight:700;color:var(--txt);">${inv.label}</div>
-          <div style="font-size:12px;color:var(--txt-m);">
-            ${inv.amount ? formatCurrency(inv.amount) : 'See PDF for amount'} · Sent ${formatDate(inv.sent_at)}
+
+    const TYPE_ICON  = { estimate:'📋', invoice:'🧾', receipt:'✅' };
+    const TYPE_COLOR = { estimate:'var(--chr)', invoice:'var(--gld)', receipt:'var(--ok)' };
+    const TYPE_LABEL = { estimate:'Estimate', invoice:'Invoice', receipt:'Receipt' };
+
+    el.innerHTML = docs.map(d => {
+      const icon  = TYPE_ICON[d.doc_type]  || '📄';
+      const color = TYPE_COLOR[d.doc_type] || 'var(--gld)';
+      const label = TYPE_LABEL[d.doc_type] || 'Document';
+      return `
+      <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--b1);flex-wrap:wrap;">
+        <div style="width:36px;height:36px;border-radius:8px;background:rgba(216,188,132,0.1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${icon}</div>
+        <div style="flex:1;min-width:160px;">
+          <div style="font-size:13px;font-weight:700;color:var(--txt);">${label}
+            <span style="font-size:11px;font-weight:400;color:var(--txt-d);margin-left:6px;">#${d.doc_number||''}</span>
           </div>
+          <div style="font-size:12px;color:var(--txt-m);">
+            ${formatCurrency(d.subtotal||d.amount||0)}
+            ${d.sent_at ? ' · Sent ' + formatDate(d.sent_at) : ''}
+          </div>
+          ${d.line_items && d.line_items.length ? `
+            <div style="font-size:11px;color:var(--txt-d);margin-top:3px;">
+              ${d.line_items.map(li => li.label + ': ' + formatCurrency(li.amount)).join(' · ')}
+            </div>` : ''}
+          ${d.notes ? `<div style="font-size:11px;color:var(--txt-m);margin-top:4px;font-style:italic;">${d.notes}</div>` : ''}
         </div>
-        <div style="display:flex;gap:8px;align-items:center;">
+        <div style="display:flex;gap:8px;align-items:center;flex-shrink:0;">
           <span style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--ok);">✔ Received</span>
-          ${inv.file_url ? `<a href="${inv.file_url}" target="_blank" class="btn btn-gld btn-sm">↓ Download PDF</a>` : '<span style="font-size:11px;color:var(--txt-d);">PDF not available in demo</span>'}
+          <button class="btn btn-gld btn-sm" onclick="previewCustDoc(${d.id})">👁 View</button>
         </div>
-      </div>`).join('') + `
+      </div>`}).join('') + `
       <div style="margin-top:12px;padding:10px 12px;background:rgba(216,188,132,0.06);border:1px solid rgba(216,188,132,0.12);border-radius:6px;font-size:12px;color:var(--txt-m);">
         💳 Pay via <strong>Zelle, Venmo, or CashApp</strong> to Buffy after receiving your invoice. Message her with your confirmation number.
       </div>`;
+  }
+
+  // Build and open a printable view of a document
+  function previewCustDoc(docId) {
+    const d = (detail.invoices || []).find(i => i.id === docId);
+    if (!d) return;
+    const TYPE_LABEL = { estimate:'Estimate', invoice:'Invoice', receipt:'Receipt' };
+    const TYPE_COLOR = { estimate:'#2980b9', invoice:'#c0932b', receipt:'#27ae60' };
+    const label = TYPE_LABEL[d.doc_type] || 'Document';
+    const color = TYPE_COLOR[d.doc_type] || '#c0932b';
+    const items = d.line_items || [];
+    const subtotal = d.subtotal || d.amount || 0;
+    const rows = items.map(i => `
+      <tr>
+        <td style="padding:10px 14px;border-bottom:1px solid #eee;color:#333;">${i.label}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${parseFloat(i.amount).toFixed(2)}</td>
+      </tr>`).join('');
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+      <title>${label} ${d.doc_number}</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;background:#fff;padding:48px;}
+        .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px;}
+        .brand{font-size:22px;font-weight:800;letter-spacing:2px;text-transform:uppercase;}
+        .brand-sub{font-size:11px;color:#888;letter-spacing:1px;margin-top:3px;}
+        .doc-type{font-size:36px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:${color};}
+        .doc-num{font-size:13px;color:#888;margin-top:4px;letter-spacing:1px;}
+        .meta{display:flex;gap:48px;margin-bottom:32px;padding:20px 0;border-top:2px solid #eee;border-bottom:2px solid #eee;}
+        .meta-block .lbl{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#aaa;margin-bottom:5px;}
+        .meta-block .val{font-size:14px;font-weight:600;}
+        table{width:100%;border-collapse:collapse;margin-bottom:20px;}
+        th{background:${color};color:#fff;padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:2px;}
+        th:last-child{text-align:right;}
+        .total-row td{padding:14px;font-size:16px;font-weight:800;border-top:2px solid #111;}
+        .total-row td:last-child{color:${color};}
+        .notes{margin-top:24px;padding:16px;background:#f9f9f9;border-left:3px solid ${color};font-size:13px;color:#555;}
+        .footer{margin-top:48px;text-align:center;font-size:11px;color:#bbb;border-top:1px solid #eee;padding-top:20px;}
+        @media print{body{padding:24px;}}
+      </style>
+    </head><body>
+      <div class="header">
+        <div>
+          <div class="brand">Cope Aesthetic Customs</div>
+          <div class="brand-sub">CopeAestheticCustoms@gmail.com · (919) 295-2569</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="doc-type">${label}</div>
+          <div class="doc-num">#${d.doc_number||''}</div>
+          <div style="font-size:11px;color:#aaa;margin-top:4px;">${d.sent_at ? new Date(d.sent_at).toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'}) : ''}</div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="meta-block">
+          <div class="lbl">Order</div>
+          <div class="val">#${d.order_id}</div>
+        </div>
+        <div class="meta-block">
+          <div class="lbl">Date</div>
+          <div class="val">${d.sent_at ? new Date(d.sent_at).toLocaleDateString() : new Date().toLocaleDateString()}</div>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Description</th><th style="text-align:right;">Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="total-row"><td>Total</td><td style="text-align:right;">$${parseFloat(subtotal).toFixed(2)}</td></tr></tfoot>
+      </table>
+      ${d.notes ? `<div class="notes"><strong>Notes:</strong> ${d.notes}</div>` : ''}
+      <div class="footer">Cope Aesthetic Customs · customs.copeaesthetic.studio · Thank you! 🎨</div>
+    </body></html>`;
+    const win = window.open('', '_blank');
+    win.document.write(html);
+    win.document.close();
   }
 
   function openLb(src){document.getElementById('lbImg').src=src;document.getElementById('lb').classList.add('open');}
