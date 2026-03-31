@@ -30,7 +30,7 @@
                      builds the table HTML
     pg(dir)        — increments/decrements the page number and re-renders
     openRushModal(id) — opens the approve/deny modal for a specific rush order
-    approveRush(id, approved) — updates orders[].rush_approved and re-filters
+    approveRush(id, approved) — updates MOCK.orders[].rush_approved and re-filters
 
   BACKEND TODO:
     loadOrders()   → GET /api/orders (with optional query params for filters)
@@ -107,33 +107,21 @@
   requireAdminAuth();
   renderAdminNav('admin-orders.html');
 
-  let all=[], filtered=[], page=1, orders=[];
+  let all=[], filtered=[], page=1;
   const PER=15;
-  const users = {};
-
-  // Wrap in async IIFE so we can use await at top level
-  (async () => {
-    // Load orders from API
-    const ordersResult = await apiFetch('/api/orders');
-    orders = (ordersResult && ordersResult.ok) ? ordersResult.data : [];
-
-    // Load users from API for name lookup
-    const usersResult = await apiFetch('/api/users');
-    if (usersResult && usersResult.ok) {
-      (usersResult.data || []).forEach(u => users[u.id]=u);
-    }
-    const me = JSON.parse(localStorage.getItem('admin_user')||'{}');
-    if (me.id) users[me.id] = me;
-
-    loadOrders();
-  })();
 
   // Build status select options
   document.querySelector('#statusF').innerHTML = '<option value="">All Statuses</option>' +
     Object.entries(STATUSES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
 
-  function loadOrders(){
-    all = [...orders].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+  async function loadOrders(){
+    document.getElementById('tBody').innerHTML = '<tr><td colspan="10"><div class="empty"><div class="spin"></div></div></td></tr>';
+    const res = await apiFetch('/api/orders');
+    if (!res || !res.ok) {
+      document.getElementById('tBody').innerHTML = '<tr><td colspan="10"><div class="empty"><div class="empty-txt">Failed to load orders.</div></div></td></tr>';
+      return;
+    }
+    all = (res.data || []).sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
     // Check URL params
     const p = new URLSearchParams(location.search);
     if(p.get('filter')==='rush') document.getElementById('rushF').value='rush_pending';
@@ -146,8 +134,7 @@
     const ru = document.getElementById('rushF').value;
     const ti = document.getElementById('tierF').value;
     filtered = all.filter(o=>{
-      const u = users[o.user_id]||{};
-      const ms = `${o.id} ${u.name||''} ${u.email||''} ${o.item_type}`.toLowerCase();
+      const ms = `${o.id} ${o.customer_name||''} ${o.customer_email||''} ${o.item_type}`.toLowerCase();
       const mSearch = !s || ms.includes(s);
       const mStatus = !st || o.status===st;
       const mRush   = !ru || (ru==='rush_pending'&&o.is_rush&&!o.rush_approved) || (ru==='rush_approved'&&o.rush_approved);
@@ -167,7 +154,6 @@
       return;
     }
     tbody.innerHTML=slice.map(o=>{
-      const u=users[o.user_id]||{};
       const rushHtml = o.is_rush
         ? o.rush_approved
           ? `<span style="color:var(--ok);font-size:10px;font-weight:700;">⚡ Approved</span>`
@@ -175,7 +161,7 @@
         : '—';
       return `<tr style="cursor:pointer;" onclick="window.location='admin-order-detail.html?id=${o.id}'">
         <td><strong>#${o.id}</strong></td>
-        <td><strong>${u.name||'—'}</strong><br/><span style="font-size:11px;color:var(--txt-m);">${u.email||''}</span></td>
+        <td><strong>${o.customer_name||'—'}</strong><br/><span style="font-size:11px;color:var(--txt-m);">${o.customer_email||''}</span></td>
         <td>${o.item_type}</td>
         <td style="font-size:12px;text-transform:capitalize;">${o.pricing_tier||'—'}</td>
         <td onclick="event.stopPropagation()">${rushHtml}</td>
@@ -196,13 +182,13 @@
   function pg(dir){ page+=dir; render(); window.scrollTo({top:0,behavior:'smooth'}); }
 
   function openRushModal(id){
-    const o = orders.find(x=>x.id===id);
-    const u = users[o.user_id]||{};
+    const o = all.find(x=>x.id===id);
+    if (!o) return;
     document.getElementById('modalTitle').textContent = `Rush Approval — Order #${id}`;
     document.getElementById('modalBody').innerHTML = `
       <div style="background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:16px;margin-bottom:18px;">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
-          <div><div class="fl">Customer</div><div>${u.name||'—'}</div></div>
+          <div><div class="fl">Customer</div><div>${o.customer_name||'—'}</div></div>
           <div><div class="fl">Item</div><div>${o.item_type}</div></div>
           <div><div class="fl">Must Have By</div><div style="color:var(--warn);">${formatDate(o.must_have_by)||'Not specified'}</div></div>
           <div><div class="fl">Rush Fee</div><div style="color:var(--gld);">50% of custom fee</div></div>
@@ -217,16 +203,19 @@
     document.getElementById('statusModal').classList.add('open');
   }
 
-  function approveRush(id, approved){
-    const o = orders.find(x=>x.id===id);
-    o.rush_approved = approved;
-    if(!approved) o.is_rush = false;
+  async function approveRush(id, approved){
+    await apiFetch('/api/orders/' + id, {
+      method: 'PATCH',
+      body: JSON.stringify({ rush_approved: approved, is_rush: approved ? true : false })
+    });
     showToast(approved ? '⚡ Rush order approved!' : 'Rush request denied.');
-    closeModal(); filter();
+    closeModal();
+    loadOrders();
   }
 
   function closeModal(){ document.getElementById('statusModal').classList.remove('open'); }
 
+  loadOrders();
 </script>
 </body>
 </html>
