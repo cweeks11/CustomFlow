@@ -888,50 +888,6 @@ def delete_order_image(order_id, image_id):
     return jsonify({'deleted': image_id})
 
 
-@app.route('/api/mockups/<int:mockup_id>/approve', methods=['POST'])
-@require_auth
-def approve_mockup(mockup_id):
-    """
-    POST /api/mockups/<id>/approve
-    Body: { approved: true/false, note: 'optional note' }
-    Customer approves or requests changes on a mockup.
-    If approved=false, creates a revision request with the customer's note.
-    Called by: customer-order-detail.html mockup section
-    """
-    mockup = Mockup.query.get_or_404(mockup_id)
-    data = request.get_json() or {}
-    approved = data.get('approved', True)
-
-    mockup.approved = approved
-    if approved:
-        mockup.approval_at = datetime.datetime.utcnow()
-    
-    db.session.flush()
-
-    if not approved:
-        # Create a revision request with the customer's note
-        existing_count = Revision.query.filter_by(order_id=mockup.order_id).count()
-        revision_number = existing_count + 1
-        charge_amount = 0 if revision_number <= 3 else 20.00
-
-        revision = Revision(
-            order_id        = mockup.order_id,
-            mockup_id       = mockup_id,
-            revision_number = revision_number,
-            notes           = data.get('note', 'Customer requested changes'),
-            charge_amount   = charge_amount,
-        )
-        db.session.add(revision)
-
-    db.session.commit()
-
-    return jsonify({
-        'approved':  mockup.approved,
-        'mockup_id': mockup_id,
-        'message':   'Mockup approved!' if approved else 'Revision request submitted.',
-    })
-
-
 @app.route('/api/add_ons', methods=['POST'])
 @require_admin
 def create_addon():
