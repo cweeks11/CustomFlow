@@ -57,22 +57,26 @@ class User(db.Model):
     role          = db.Column(db.String(255), nullable=False, default='customer')  # owner | employee | customer
     phone         = db.Column(db.String(255))
     password_hash = db.Column(db.String(512))  # stored as bcrypt hash
-    notify_email  = db.Column(db.Boolean, default=True)
-    notify_sms    = db.Column(db.Boolean, default=False)
-    is_active     = db.Column(db.Boolean, default=True)
-    created_at    = db.Column(db.DateTime, default=datetime.datetime.utcnow)
+    notify_email   = db.Column(db.Boolean, default=True)
+    notify_sms     = db.Column(db.Boolean, default=False)
+    is_active      = db.Column(db.Boolean, default=True)
+    # customer_type: individual | group | influencer | nonprofit | organization
+    # SQL: ALTER TABLE users ADD COLUMN IF NOT EXISTS customer_type VARCHAR(50) DEFAULT 'individual';
+    customer_type  = db.Column(db.String(50), default='individual')
+    created_at     = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
     def to_dict(self):
         return {
-            'id':           self.id,
-            'email':        self.email,
-            'name':         self.name,
-            'role':         self.role,
-            'phone':        self.phone,
-            'notify_email': self.notify_email,
-            'notify_sms':   self.notify_sms,
-            'is_active':    self.is_active if self.is_active is not None else True,
-            'created_at':   self.created_at.isoformat() if self.created_at else None,
+            'id':            self.id,
+            'email':         self.email,
+            'name':          self.name,
+            'role':          self.role,
+            'phone':         self.phone,
+            'notify_email':  self.notify_email,
+            'notify_sms':    self.notify_sms,
+            'is_active':     self.is_active if self.is_active is not None else True,
+            'customer_type': self.customer_type or 'individual',
+            'created_at':    self.created_at.isoformat() if self.created_at else None,
         }
 
 
@@ -489,23 +493,65 @@ def register():
     if existing:
         return jsonify({'error': 'An account with this email already exists'}), 409
 
+    customer_type = data.get('customer_type', 'individual')
+    SPECIAL_TYPES = {'group', 'influencer', 'nonprofit', 'organization'}
+
     user = User(
-        email        = data['email'].lower().strip(),
-        name         = data['name'].strip(),
-        role         = 'customer',
-        phone        = data.get('phone', ''),
-        password_hash= generate_password_hash(data['password']),
-        notify_email = data.get('notify_email', True),
-        notify_sms   = data.get('notify_sms', False),
+        email         = data['email'].lower().strip(),
+        name          = data['name'].strip(),
+        role          = 'customer',
+        phone         = data.get('phone', ''),
+        password_hash = generate_password_hash(data['password']),
+        notify_email  = data.get('notify_email', True),
+        notify_sms    = data.get('notify_sms', False),
+        customer_type = customer_type,
     )
     db.session.add(user)
     db.session.commit()
+
+    # Notify Buffy if a special customer type registered
+    if customer_type in SPECIAL_TYPES:
+        type_label = customer_type.replace('nonprofit', 'Non-Profit').capitalize()
+        _notify_buffy_special_customer(user, type_label)
 
     # TODO: send_welcome_email(user.name, user.email)
     # See WELCOME_EMAIL_TEMPLATE in static/core.js for the email content
 
     token = generate_token(user.id, user.role)
     return jsonify({'token': token, 'user': user.to_dict()}), 201
+
+
+def _notify_buffy_special_customer(user, type_label):
+    """
+    Internal helper — sends Buffy an email notification when a non-individual
+    customer type registers (group, influencer, non-profit, organization).
+    Requires SendGrid to be configured. Fails silently if not set up.
+    """
+    try:
+        import os, smtplib
+        buffy_email = 'CopeAestheticCustoms@gmail.com'
+        subject     = f'🔔 New {type_label} Customer Registered — {user.name}'
+        body = (
+            f"Hi Buffy,\n\n"
+            f"A new customer just signed up and selected a special account type:\n\n"
+            f"  Name:  {user.name}\n"
+            f"  Email: {user.email}\n"
+            f"  Phone: {user.phone or 'Not provided'}\n"
+            f"  Type:  {type_label}\n\n"
+            f"You may want to reach out directly to discuss group rates, "
+            f"collab details, or nonprofit pricing.\n\n"
+            f"— CustomFlow"
+        )
+        # TODO: replace with SendGrid when API key is configured
+        # sg = SendGridAPIClient(os.environ['SENDGRID_API_KEY'])
+        # msg = Mail(from_email=buffy_email, to_emails=buffy_email,
+        #            subject=subject, plain_text_content=body)
+        # sg.client.mail.send.post(request_body=msg.get())
+        #
+        # For now: log to console so it's visible in Railway logs
+        print(f"[NOTIFY BUFFY] {subject}\n{body}", flush=True)
+    except Exception as e:
+        print(f"[NOTIFY BUFFY] Failed to send notification: {e}", flush=True)
 
 
 @app.route('/api/admin/preview-token', methods=['POST'])
@@ -1285,6 +1331,7 @@ def update_user(user_id):
     if 'phone'     in data: user.phone     = data['phone']
     if 'role'      in data: user.role      = data['role']
     if 'is_active' in data: user.is_active = data['is_active']
+    if 'customer_type' in data: user.customer_type = data['customer_type']
 
     db.session.commit()
     return jsonify(user.to_dict())
@@ -1325,17 +1372,27 @@ def get_me():
 def update_me():
     """
     PATCH /api/users/me
-    Body: { name, phone, notify_email, notify_sms }
+    Body: { name, phone, notify_email, notify_sms, customer_type }
     Returns: { user }
 
     Called by: customer-settings.html when customer saves profile changes
     """
     data = request.get_json()
     user = User.query.get_or_404(request.user_id)
-    if 'name'         in data: user.name         = data['name']
-    if 'phone'        in data: user.phone        = data['phone']
-    if 'notify_email' in data: user.notify_email = data['notify_email']
-    if 'notify_sms'   in data: user.notify_sms   = data['notify_sms']
+    SPECIAL_TYPES = {'group', 'influencer', 'nonprofit', 'organization'}
+
+    old_type = user.customer_type or 'individual'
+    if 'name'          in data: user.name         = data['name']
+    if 'phone'         in data: user.phone        = data['phone']
+    if 'notify_email'  in data: user.notify_email = data['notify_email']
+    if 'notify_sms'    in data: user.notify_sms   = data['notify_sms']
+    if 'customer_type' in data:
+        new_type = data['customer_type']
+        user.customer_type = new_type
+        # Notify Buffy if they switched TO a special type (and weren't already that type)
+        if new_type in SPECIAL_TYPES and old_type != new_type:
+            type_label = new_type.replace('nonprofit', 'Non-Profit').capitalize()
+            _notify_buffy_special_customer(user, f"{type_label} (updated profile)")
     db.session.commit()
     return jsonify(user.to_dict())
 
