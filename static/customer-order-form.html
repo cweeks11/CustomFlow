@@ -252,13 +252,30 @@
       <div class="item-lbl">${it.label}</div>
     </div>`).join('');
 
-  // Build tier grid
-  document.getElementById('tierGrid').innerHTML=PRICING_TIERS.filter(t=>t.id!=='rush').map(t=>`
-    <div class="tier-card" id="tc_${t.id}" onclick="selTier('${t.id}',this)">
-      <div class="tier-lbl">${t.label}</div>
-      <div class="tier-price">${t.price}</div>
-      <div class="tier-desc">${t.desc}</div>
-    </div>`).join('');
+  // Build tier grid — load from API, fall back to hardcoded PRICING_TIERS
+  async function buildTierGrid() {
+    let tiers = [];
+    try {
+      const res = await apiFetch('/api/pricing_tiers');
+      if (res && res.ok && Array.isArray(res.data) && res.data.length) {
+        tiers = res.data.filter(t => t.is_active !== false).map(t => ({
+          id:    t.name.toLowerCase().replace(/\s+/g, '_'),
+          label: t.name,
+          price: t.price_label || (t.price_from ? '$' + t.price_from + '+' : 'Contact for pricing'),
+          desc:  t.description || '',
+        }));
+      }
+    } catch(e) {}
+    // Fall back to core.js static tiers if API returns nothing
+    if (!tiers.length) tiers = PRICING_TIERS.filter(t => t.id !== 'rush');
+    document.getElementById('tierGrid').innerHTML = tiers.map(t => `
+      <div class="tier-card" id="tc_${t.id}" onclick="selTier('${t.id}',this)">
+        <div class="tier-lbl">${t.label}</div>
+        <div class="tier-price">${t.price}</div>
+        <div class="tier-desc">${t.desc}</div>
+      </div>`).join('');
+  }
+  buildTierGrid();
 
   // Condition toggle
   document.querySelectorAll('input[name="cond"]').forEach(r=>r.addEventListener('change',function(){
