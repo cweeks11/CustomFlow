@@ -585,16 +585,27 @@ def get_orders():
     """
     GET /api/orders
     Returns orders based on who is asking:
-      - Admin/owner/employee: returns ALL orders
+      - Admin/owner/employee: returns ALL orders, each with customer_name injected
       - Customer: returns only THEIR orders
 
-    Called by: admin-orders.html, customer-portal.html
+    Called by: admin-orders.html, admin-dashboard.html, customer-portal.html
     """
     if request.user_role in ['owner', 'employee']:
         orders = Order.query.order_by(Order.created_at.desc()).all()
+        # Build a user lookup so we don't N+1 query
+        user_ids = list({o.user_id for o in orders})
+        users    = {u.id: u for u in User.query.filter(User.id.in_(user_ids)).all()}
+        result   = []
+        for o in orders:
+            d = o.to_dict()
+            u = users.get(o.user_id)
+            d['customer_name']  = u.name  if u else '—'
+            d['customer_email'] = u.email if u else '—'
+            result.append(d)
+        return jsonify(result)
     else:
         orders = Order.query.filter_by(user_id=request.user_id).order_by(Order.created_at.desc()).all()
-    return jsonify([o.to_dict() for o in orders])
+        return jsonify([o.to_dict() for o in orders])
 
 
 @app.route('/api/orders/<int:order_id>', methods=['GET'])
@@ -1119,9 +1130,21 @@ def get_queue():
     active  = sorted(Order.query.filter(Order.status.in_(active_statuses)).all(),  key=queue_sort_key)
     waiting = sorted(Order.query.filter(Order.status.in_(waiting_statuses)).all(), key=queue_sort_key)
 
+    # Inject customer names
+    all_orders = active + waiting
+    user_ids = list({o.user_id for o in all_orders})
+    users    = {u.id: u for u in User.query.filter(User.id.in_(user_ids)).all()}
+
+    def enrich(o):
+        d = o.to_dict()
+        u = users.get(o.user_id)
+        d['customer_name']  = u.name  if u else '—'
+        d['customer_email'] = u.email if u else '—'
+        return d
+
     return jsonify({
-        'active':  [o.to_dict() for o in active],
-        'waiting': [o.to_dict() for o in waiting],
+        'active':  [enrich(o) for o in active],
+        'waiting': [enrich(o) for o in waiting],
     })
 
 
