@@ -256,9 +256,9 @@
 
   // ---- Async data loading ----
   (async () => {
-    // Populate pricing
+    // Populate pricing — load from API, fall back to hardcoded
     const pg = document.getElementById('pricingGrid');
-    const pricingData = [
+    const fallbackPricing = [
       { tier:'Standard',              price_from:75,   desc:'Single color, simple designs, minimal detail work.' },
       { tier:'Detailed',              price_from:150,  desc:'Multi-color work, moderate complexity, character art.' },
       { tier:'Premium',               price_from:250,  desc:'Full custom, high detail, large-scale pieces.' },
@@ -267,12 +267,31 @@
       { tier:'AI Photography Add-On', price_from:35,   desc:'Professional AI-enhanced product photography.' },
       { tier:'Extra Revision',        price_from:20,   desc:'Each revision beyond the 3 free revisions.' },
     ];
-    if(pg) pg.innerHTML = pricingData.map(p=>`
-      <div class="price-card">
-        <div class="price-tier">${p.tier}</div>
-        <div class="price-amt">${p.price_from?'$'+p.price_from+'+':'Varies'}</div>
-        <div class="price-desc">${p.desc}</div>
-      </div>`).join('');
+    try {
+      const pRes = await apiFetch('/api/pricing_tiers');
+      if (pRes && pRes.ok && Array.isArray(pRes.data) && pRes.data.length && pg) {
+        pg.innerHTML = pRes.data.filter(p => p.is_active !== false).map(p=>`
+          <div class="price-card">
+            <div class="price-tier">${p.name}</div>
+            <div class="price-amt">${p.price_label || (p.price_from ? '$'+p.price_from+'+' : 'Varies')}</div>
+            <div class="price-desc">${p.description||''}</div>
+          </div>`).join('');
+      } else if (pg) {
+        pg.innerHTML = fallbackPricing.map(p=>`
+          <div class="price-card">
+            <div class="price-tier">${p.tier}</div>
+            <div class="price-amt">${p.price_from?'$'+p.price_from+'+':'Varies'}</div>
+            <div class="price-desc">${p.desc}</div>
+          </div>`).join('');
+      }
+    } catch(e) {
+      if (pg) pg.innerHTML = fallbackPricing.map(p=>`
+        <div class="price-card">
+          <div class="price-tier">${p.tier}</div>
+          <div class="price-amt">${p.price_from?'$'+p.price_from+'+':'Varies'}</div>
+          <div class="price-desc">${p.desc}</div>
+        </div>`).join('');
+    }
 
     // Production start date
     const psd = document.getElementById('prodStartDate');
@@ -281,18 +300,20 @@
       if(bkRes && bkRes.ok) psd && (psd.textContent = bkRes.data.prod_start || 'May 18, 2026');
     } catch(e) { if(psd) psd.textContent = 'May 18, 2026'; }
 
-    // FAQs
+    // FAQs — API returns { question, answer } fields
     const fl = document.getElementById('faqList');
     try {
       const fRes = await apiFetch('/api/faqs');
-      if(fRes && fRes.ok && fl) {
-        fl.innerHTML = (fRes.data||[]).map(f=>`
+      if(fRes && fRes.ok && Array.isArray(fRes.data) && fRes.data.length && fl) {
+        fl.innerHTML = fRes.data.map(f=>`
           <div class="acc-item">
             <div class="acc-head" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
-              ${f.q} <span class="acc-arr">▾</span>
+              ${f.question || f.q || ''} <span class="acc-arr">▾</span>
             </div>
-            <div class="acc-body" style="font-family:var(--fb);font-style:italic;font-size:16px;line-height:1.7;color:var(--txt-m);">${f.a}</div>
+            <div class="acc-body" style="font-family:var(--fb);font-style:italic;font-size:16px;line-height:1.7;color:var(--txt-m);">${f.answer || f.a || ''}</div>
           </div>`).join('');
+      } else if (fl) {
+        fl.innerHTML = '<div style="font-size:13px;color:var(--txt-d);padding:12px 0;">No FAQs added yet.</div>';
       }
     } catch(e) {}
   })();
