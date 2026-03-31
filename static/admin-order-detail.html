@@ -91,7 +91,7 @@
 
   // All state variables — populated by loadOrderDetail() below
   let ORDER = {}, CUSTOMER = {}, USERS = {};
-  let custPhotos=[], basePhoots=[], mockupImgs=[];
+  let custPhotos=[], basePhoots=[], mockupImgs=[], moodboardImgs=[], conceptImgs=[];
   let mockups=[], revisions=[], payments=[], addons=[], statusHist=[], consults=[];
 
   // Load all order data from the real API
@@ -106,9 +106,11 @@
     ORDER      = d.order || {};
     CUSTOMER   = d.customer || {};
     USERS[CUSTOMER.id] = CUSTOMER;
-    custPhotos = (d.order_images||[]).filter(i=>i.type==='reference').map(i=>i.url||'').filter(Boolean);
-    basePhoots = (d.order_images||[]).filter(i=>i.type==='base_photo').map(i=>i.url||'').filter(Boolean);
-    mockupImgs = (d.order_images||[]).filter(i=>i.type==='mockup').map(i=>i.url||'').filter(Boolean);
+    custPhotos    = (d.order_images||[]).filter(i=>i.type==='reference').map(i=>i.url||'').filter(Boolean);
+    basePhoots    = (d.order_images||[]).filter(i=>i.type==='base_photo').map(i=>i.url||'').filter(Boolean);
+    mockupImgs    = (d.order_images||[]).filter(i=>i.type==='mockup').map(i=>i.url||'').filter(Boolean);
+    moodboardImgs = (d.order_images||[]).filter(i=>i.type==='moodboard').map(i=>i.url||'').filter(Boolean);
+    conceptImgs   = (d.order_images||[]).filter(i=>i.type==='concept_art').map(i=>i.url||'').filter(Boolean);
     mockups    = d.mockups || [];
     revisions  = d.revisions || [];
     payments   = d.payments || [];
@@ -116,10 +118,12 @@
     statusHist = d.status_history || [];
     consults   = d.consult_calls || [];
     render();
-    renderInvoices();
-    renderGallery('refGal', custPhotos, false, 'ref');
-    renderGallery('baseGal', basePhoots, false, 'base');
-    renderGallery('mockupGal', mockupImgs, true, 'mockup');
+    renderDocuments();
+    renderGallery('refGal',       custPhotos,    false, 'reference');
+    renderGallery('baseGal',      basePhoots,    false, 'base_photo');
+    renderGallery('moodboardGal', moodboardImgs, true,  'moodboard');
+    renderGallery('conceptGal',   conceptImgs,   true,  'concept_art');
+    renderGallery('mockupGal',    mockupImgs,    true,  'mockup');
   }
   loadOrderDetail().then(() => setupDropZonesAfterLoad());
 
@@ -152,6 +156,11 @@
               </select>
             </div>
             <div style="margin-top:18px;">${statusBadge(ORDER.status)}</div>
+            <div style="margin-top:18px;">
+              <button class="btn btn-out btn-sm" onclick="openCustomerView()" title="Preview this order as the customer sees it">
+                👁 Customer View
+              </button>
+            </div>
           </div>
         </div>
         <!-- PIPELINE -->
@@ -286,15 +295,15 @@
       </div>
     </div>
 
-    <!-- ROW 5: Images — Base Photo + Reference -->
+    <!-- ROW 5: Base Photo + Customer References -->
     <div class="g2" style="margin-bottom:18px;">
       <div class="card">
         <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Base Photo <span style="font-size:10px;color:var(--txt-d);font-weight:400;text-transform:none;"> — item as received</span></div></div>
         <div class="drop-zone" id="baseDrop" style="margin-bottom:8px;">
-          <input type="file" id="baseFile" accept="image/*" multiple onchange="handleUpload(event,'base')"/>
+          <input type="file" id="baseFile" accept="image/*" multiple onchange="handleUpload(event,'base_photo')"/>
           <div style="font-size:20px;opacity:0.3;margin-bottom:6px;">📷</div>
           <div class="drop-txt">Upload base photo</div>
-          <div class="drop-sub">Photo of item as received before work begins</div>
+          <div class="drop-sub">Photo of item before work begins</div>
         </div>
         <div class="gallery" id="baseGal"><div class="gmt">No base photo yet.</div></div>
       </div>
@@ -304,23 +313,74 @@
       </div>
     </div>
 
-    <!-- ROW 6: Mockups + Revisions -->
+    <!-- ROW 6: Moodboard -->
     <div class="card" style="margin-bottom:18px;">
       <div class="card-head">
-        <div class="card-title"><span class="card-dot"></span>Design Mockups & Revisions
+        <div class="card-title"><span class="card-dot" style="background:var(--mg);"></span>Moodboard
+          <span style="font-size:11px;font-weight:400;color:var(--txt-m);text-transform:none;letter-spacing:0;"> — overall aesthetic direction</span>
+        </div>
+      </div>
+      <div class="drop-zone" id="moodboardDrop" style="margin-bottom:14px;">
+        <input type="file" id="moodboardFile" accept="image/*" multiple onchange="handleUpload(event,'moodboard')"/>
+        <div style="font-size:20px;opacity:0.3;margin-bottom:6px;">🎨</div>
+        <div class="drop-txt">Upload moodboard images</div>
+        <div class="drop-sub">Color palettes, inspiration, overall vibe</div>
+      </div>
+      <div class="gallery" id="moodboardGal"><div class="gmt">No moodboard uploaded yet.</div></div>
+    </div>
+
+    <!-- ROW 7: Concept Art -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-head">
+        <div class="card-title"><span class="card-dot" style="background:var(--vio-l);"></span>Concept Art
+          <span style="font-size:11px;font-weight:400;color:var(--txt-m);text-transform:none;letter-spacing:0;"> — initial design sketches</span>
+        </div>
+      </div>
+      <div class="drop-zone" id="conceptDrop" style="margin-bottom:14px;">
+        <input type="file" id="conceptFile" accept="image/*" multiple onchange="handleUpload(event,'concept_art')"/>
+        <div style="font-size:20px;opacity:0.3;margin-bottom:6px;">✏️</div>
+        <div class="drop-txt">Upload concept art</div>
+        <div class="drop-sub">Sketches and initial design concepts</div>
+      </div>
+      <div class="gallery" id="conceptGal"><div class="gmt">No concept art uploaded yet.</div></div>
+    </div>
+
+    <!-- ROW 8: Mockup + Approval Status + Revisions -->
+    <div class="card" style="margin-bottom:18px;">
+      <div class="card-head">
+        <div class="card-title"><span class="card-dot"></span>Final Mockup
           <span style="font-size:11px;font-weight:400;color:var(--txt-m);text-transform:none;letter-spacing:0;">
             — ${usedRevs}/${freeRevs} free revisions used${paidRevs>0?` + ${paidRevs} paid`:''}
           </span>
         </div>
         <button class="btn btn-out btn-sm" onclick="openAddRevision()">+ Add Revision Note</button>
       </div>
+
+      ${mockups.length > 0 ? `
+        <div style="padding:10px 14px;border-radius:6px;margin-bottom:14px;${
+          mockups[mockups.length-1].approved
+            ? 'background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);'
+            : 'background:rgba(232,160,32,0.08);border:1px solid rgba(232,160,32,0.2);'
+        }display:flex;align-items:center;gap:10px;">
+          <span style="font-size:16px;">${mockups[mockups.length-1].approved ? '✅' : '⏳'}</span>
+          <div>
+            <div style="font-size:12px;font-weight:700;color:${mockups[mockups.length-1].approved?'var(--ok)':'var(--warn)'};">
+              ${mockups[mockups.length-1].approved ? 'Customer Approved' : 'Awaiting Customer Approval'}
+            </div>
+            ${mockups[mockups.length-1].approval_at
+              ? `<div style="font-size:11px;color:var(--txt-d);">Approved ${formatDatetime(mockups[mockups.length-1].approval_at)}</div>`
+              : `<div style="font-size:11px;color:var(--txt-d);">Uploaded — waiting for customer to review</div>`}
+          </div>
+        </div>` : ''}
+
       <div class="drop-zone" id="mockupDrop" style="margin-bottom:14px;">
         <input type="file" id="mockupFile" accept="image/*" multiple onchange="handleUpload(event,'mockup')"/>
-        <div style="font-size:20px;opacity:0.3;margin-bottom:6px;">🎨</div>
-        <div class="drop-txt">Upload mockup / design preview</div>
-        <div class="drop-sub">PNG, JPG — drag & drop or click</div>
+        <div style="font-size:20px;opacity:0.3;margin-bottom:6px;">🖼</div>
+        <div class="drop-txt">Upload mockup for customer approval</div>
+        <div class="drop-sub">Customer will see this and can approve or request changes</div>
       </div>
-      <div class="gallery" id="mockupGal"><div class="gmt">No mockups uploaded yet.</div></div>
+      <div class="gallery" id="mockupGal"><div class="gmt">No mockup uploaded yet.</div></div>
+
       ${revisions.length ? `
         <div style="margin-top:16px;border-top:1px solid var(--b1);padding-top:14px;">
           <div class="fl" style="margin-bottom:10px;">Revision History</div>
@@ -351,14 +411,65 @@
     </div>
 
 
-    <!-- ROW 7b: INVOICES -->
+    <!-- ROW 7b: FEE BUILDER & DOCUMENTS -->
     <div class="card" style="margin-bottom:18px;" id="invoicesCard">
-      <div class="card-head">
-        <div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Invoices
-          <span style="font-size:10px;font-weight:400;color:var(--txt-d);text-transform:none;letter-spacing:0;"> — upload PDFs and send to customer</span>
+      <div class="card-head" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+        <div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Fees & Documents</div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+          <button class="btn btn-out btn-sm" onclick="toggleFeeBuilder()" id="feeBuilderToggle">✏️ Build Fees</button>
         </div>
       </div>
-      <div id="invoicesList"></div>
+
+      <!-- FEE BUILDER PANEL (collapsed by default) -->
+      <div id="feeBuilderPanel" style="display:none;border-top:1px solid var(--b1);padding-top:18px;margin-top:6px;">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:2px;color:var(--txt-m);margin-bottom:14px;">Enter Fees</div>
+
+        <!-- Standard Fees Grid -->
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px;" id="standardFeeGrid">
+          ${['booking_fee','rush_fee','cleaning_fee','custom_fee','final_balance'].map(k => `
+            <div>
+              <div class="fl" style="margin-bottom:4px;">${({booking_fee:'Booking Fee',rush_fee:'Rush Fee',cleaning_fee:'Cleaning Fee',custom_fee:'Custom Fee',final_balance:'Final Balance'})[k]}</div>
+              <div style="position:relative;">
+                <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt-m);font-size:14px;">$</span>
+                <input type="number" min="0" step="0.01" class="fc" id="fee_${k}" placeholder="0.00"
+                  style="padding-left:22px;"
+                  value="${k==='booking_fee'?'50':k==='rush_fee'?(ORDER.rush_fee||''):''}"
+                  ${k==='booking_fee'||(!ORDER.is_rush&&k==='rush_fee')?'':''} />
+              </div>
+            </div>`).join('')}
+        </div>
+
+        <!-- Custom Add-Ons -->
+        <div style="margin-bottom:16px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+            <div class="fl">Custom Add-Ons</div>
+            <button class="btn btn-ghost btn-sm" onclick="addCustomFeeRow()">+ Add Fee</button>
+          </div>
+          <div id="customFeeRows"></div>
+        </div>
+
+        <!-- Notes -->
+        <div style="margin-bottom:16px;">
+          <div class="fl" style="margin-bottom:4px;">Notes (optional — shown on document)</div>
+          <textarea class="fc" id="feeNotes" rows="2" placeholder="e.g. Balance due before shipping..."></textarea>
+        </div>
+
+        <!-- Totals preview + Generate buttons -->
+        <div style="background:rgba(216,188,132,0.06);border:1px solid rgba(216,188,132,0.15);border-radius:8px;padding:14px 16px;margin-bottom:14px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+            <span style="font-size:13px;color:var(--txt-m);">Total</span>
+            <span style="font-size:20px;font-weight:700;color:var(--gld);" id="feeTotalDisplay">$0.00</span>
+          </div>
+          <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-out btn-sm" onclick="generateDoc('estimate')" style="flex:1;min-width:120px;">📋 Generate Estimate</button>
+            <button class="btn btn-out btn-sm" onclick="generateDoc('invoice')"  style="flex:1;min-width:120px;">🧾 Generate Invoice</button>
+            <button class="btn btn-gld btn-sm" onclick="generateDoc('receipt')"  style="flex:1;min-width:120px;">✅ Generate Receipt</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- DOCUMENTS LIST -->
+      <div id="invoicesList" style="margin-top:${''};"></div>
     </div>
 
     <!-- ROW 8: Notes + Status History -->
@@ -404,151 +515,314 @@
     </div>`;
   }
 
-  // ---- INVOICE DEFINITIONS ----
-  // All 5 possible invoice types. Each slot only renders if conditions are met:
-  //   rush    — only shown if order is_rush && rush_approved
-  //   cleaning — only shown if order has cleaning fee (admin manually flags)
-  // The others always show for every order.
-  const INVOICE_TYPES = [
-    { type:'booking',  label:'Booking Fee Invoice',    amount: 50,              always: true  },
-    { type:'custom',   label:'Custom Fee Invoice',     amount: null,            always: true  },
-    { type:'rush',     label:'Rush Fee Invoice',       amount: ORDER.rush_fee,  always: false, condition: () => ORDER.is_rush && ORDER.rush_approved },
-    { type:'cleaning', label:'Cleaning Fee Invoice',   amount: 25,              always: false, condition: () => ORDER.has_cleaning_fee },
-    { type:'final',    label:'Final Balance Invoice',  amount: null,            always: true  },
-  ];
+  // ============================================================
+  // FEE BUILDER + DOCUMENT GENERATION
+  // ============================================================
 
-  // renderInvoices() — builds the invoice upload panel showing all applicable
-  // invoice slots for this order. Each slot shows:
-  //   - Invoice type label and amount (if fixed)
-  //   - Upload status: pending / uploaded / sent
-  //   - Upload button (if not yet uploaded)
-  //   - "Send to Customer" button (if uploaded but not yet sent)
-  //   - Sent confirmation with timestamp (if already sent)
-  function renderInvoices() {
-    // Load invoices from real API
-    let existingInvoices = detail.invoices || [];
-    const existing = existingInvoices;
-    const applicable = INVOICE_TYPES.filter(t => t.always || (t.condition && t.condition()));
+  // Toggle the fee builder panel open/closed
+  function toggleFeeBuilder() {
+    const panel = document.getElementById('feeBuilderPanel');
+    const btn   = document.getElementById('feeBuilderToggle');
+    const open  = panel.style.display === 'none';
+    panel.style.display = open ? 'block' : 'none';
+    btn.textContent = open ? '✕ Close' : '✏️ Build Fees';
+    if (open) {
+      updateFeeTotal();
+      // Add live-update listeners
+      document.querySelectorAll('#standardFeeGrid input').forEach(inp => {
+        inp.addEventListener('input', updateFeeTotal);
+      });
+    }
+  }
 
-    document.getElementById('invoicesList').innerHTML = applicable.map(def => {
-      const inv = existing.find(i => i.type === def.type);
-      const statusIcon  = inv ? (inv.status === 'sent' ? '✔ Sent' : '⬆ Uploaded — not sent') : '○ Not uploaded';
-      const statusColor = inv ? (inv.status === 'sent' ? 'var(--ok)' : 'var(--warn)') : 'var(--txt-d)';
+  // Add a custom fee row (label + amount pair)
+  let _customFeeCount = 0;
+  function addCustomFeeRow() {
+    _customFeeCount++;
+    const id  = 'cfr_' + _customFeeCount;
+    const div = document.createElement('div');
+    div.id    = id;
+    div.style.cssText = 'display:flex;gap:8px;align-items:center;margin-bottom:8px;';
+    div.innerHTML = `
+      <input type="text"   class="fc" placeholder="Fee name (e.g. Design Consultation)" style="flex:2;"
+        oninput="updateFeeTotal()" />
+      <div style="position:relative;flex:1;">
+        <span style="position:absolute;left:10px;top:50%;transform:translateY(-50%);color:var(--txt-m);">$</span>
+        <input type="number" class="fc custom-fee-amt" min="0" step="0.01" placeholder="0.00"
+          style="padding-left:22px;" oninput="updateFeeTotal()" />
+      </div>
+      <button class="btn btn-ghost btn-sm" onclick="document.getElementById('${id}').remove();updateFeeTotal();">✕</button>`;
+    document.getElementById('customFeeRows').appendChild(div);
+  }
 
-      return `
-        <div style="display:flex;align-items:center;gap:14px;padding:14px 0;border-bottom:1px solid var(--b1);flex-wrap:wrap;" id="inv_${def.type}">
-          <!-- Type label + amount -->
-          <div style="flex:1;min-width:180px;">
-            <div style="font-size:13px;font-weight:700;color:var(--txt);">${def.label}</div>
+  // Recompute running total from all fee inputs
+  function updateFeeTotal() {
+    let total = 0;
+    ['booking_fee','rush_fee','cleaning_fee','custom_fee','final_balance'].forEach(k => {
+      const el = document.getElementById('fee_' + k);
+      if (el) total += parseFloat(el.value || 0);
+    });
+    document.querySelectorAll('.custom-fee-amt').forEach(el => {
+      total += parseFloat(el.value || 0);
+    });
+    const disp = document.getElementById('feeTotalDisplay');
+    if (disp) disp.textContent = formatCurrency(total);
+    return total;
+  }
+
+  // Collect all non-zero line items from the fee builder
+  function collectLineItems() {
+    const LABELS = {
+      booking_fee: 'Booking Fee', rush_fee: 'Rush Fee',
+      cleaning_fee: 'Cleaning Fee', custom_fee: 'Custom Fee',
+      final_balance: 'Final Balance'
+    };
+    const items = [];
+    ['booking_fee','rush_fee','cleaning_fee','custom_fee','final_balance'].forEach(k => {
+      const el  = document.getElementById('fee_' + k);
+      const amt = el ? parseFloat(el.value || 0) : 0;
+      if (amt > 0) items.push({ label: LABELS[k], amount: amt });
+    });
+    // Custom rows
+    document.querySelectorAll('#customFeeRows > div').forEach(row => {
+      const labelEl = row.querySelector('input[type="text"]');
+      const amtEl   = row.querySelector('input[type="number"]');
+      const lbl     = labelEl ? labelEl.value.trim() : '';
+      const amt     = amtEl   ? parseFloat(amtEl.value || 0) : 0;
+      if (lbl && amt > 0) items.push({ label: lbl, amount: amt });
+    });
+    return items;
+  }
+
+  // Generate an estimate, invoice, or receipt PDF in-browser,
+  // save it to the DB, then re-render the documents list.
+  async function generateDoc(docType) {
+    const items = collectLineItems();
+    if (!items.length) { showToast('Enter at least one fee amount first.'); return; }
+
+    const notes = (document.getElementById('feeNotes') || {}).value || '';
+    const year  = new Date().getFullYear();
+    const suffix = { estimate:'E', invoice:'I', receipt:'R' }[docType];
+    const docNum = `${year}${OID}${suffix}`;
+    const subtotal = items.reduce((s,i) => s + i.amount, 0);
+    const docLabel = { estimate:'Estimate', invoice:'Invoice', receipt:'Receipt' }[docType];
+
+    // Build PDF HTML as a data-URL using print-friendly markup
+    const pdfHtml = buildDocHtml({ docType, docNum, docLabel, items, subtotal, notes, order: ORDER, customer: CUSTOMER });
+
+    // Open print dialog in a new window (acts as PDF export)
+    const win = window.open('', '_blank');
+    win.document.write(pdfHtml);
+    win.document.close();
+    win.focus();
+    setTimeout(() => win.print(), 600);
+
+    // Save to DB
+    try {
+      const res = await apiFetch('/api/orders/' + OID + '/invoices', {
+        method: 'POST',
+        body: JSON.stringify({ doc_type: docType, line_items: items, notes })
+      });
+      if (res && res.invoice) {
+        detail.invoices = detail.invoices || [];
+        detail.invoices.unshift(res.invoice);
+        renderDocuments();
+        showToast(`${docLabel} #${docNum} saved! Use "Send to Customer" to share it.`);
+      }
+    } catch(e) {
+      showToast('Saved locally — check API connection.');
+    }
+  }
+
+  // Build print-ready HTML for the document
+  function buildDocHtml({ docType, docNum, docLabel, items, subtotal, notes, order, customer }) {
+    const typeColors = { estimate:'#2980b9', invoice:'#c0932b', receipt:'#27ae60' };
+    const color = typeColors[docType] || '#c0932b';
+    const rows = items.map(i => `
+      <tr>
+        <td style="padding:10px 14px;border-bottom:1px solid #eee;color:#333;">${i.label}</td>
+        <td style="padding:10px 14px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">$${parseFloat(i.amount).toFixed(2)}</td>
+      </tr>`).join('');
+    return `<!DOCTYPE html><html><head><meta charset="UTF-8"/>
+      <title>${docLabel} ${docNum}</title>
+      <style>
+        *{box-sizing:border-box;margin:0;padding:0;}
+        body{font-family:'Helvetica Neue',Arial,sans-serif;color:#111;background:#fff;padding:48px;}
+        .header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:36px;}
+        .brand{font-size:22px;font-weight:800;letter-spacing:2px;text-transform:uppercase;color:#111;}
+        .brand-sub{font-size:11px;color:#888;letter-spacing:1px;margin-top:3px;}
+        .doc-type{font-size:36px;font-weight:900;letter-spacing:3px;text-transform:uppercase;color:${color};}
+        .doc-num{font-size:13px;color:#888;margin-top:4px;letter-spacing:1px;}
+        .meta{display:flex;gap:48px;margin-bottom:32px;padding:20px 0;border-top:2px solid #eee;border-bottom:2px solid #eee;}
+        .meta-block .lbl{font-size:10px;text-transform:uppercase;letter-spacing:2px;color:#aaa;margin-bottom:5px;}
+        .meta-block .val{font-size:14px;font-weight:600;}
+        table{width:100%;border-collapse:collapse;margin-bottom:20px;}
+        th{background:${color};color:#fff;padding:10px 14px;text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:2px;}
+        th:last-child{text-align:right;}
+        .total-row td{padding:14px;font-size:16px;font-weight:800;border-top:2px solid #111;}
+        .total-row td:last-child{color:${color};}
+        .notes{margin-top:24px;padding:16px;background:#f9f9f9;border-left:3px solid ${color};font-size:13px;color:#555;}
+        .footer{margin-top:48px;text-align:center;font-size:11px;color:#bbb;border-top:1px solid #eee;padding-top:20px;}
+        @media print{body{padding:24px;} .no-print{display:none;}}
+      </style>
+    </head><body>
+      <div class="header">
+        <div>
+          <div class="brand">Cope Aesthetic Customs</div>
+          <div class="brand-sub">CopeAestheticCustoms@gmail.com · (919) 295-2569</div>
+        </div>
+        <div style="text-align:right;">
+          <div class="doc-type">${docLabel}</div>
+          <div class="doc-num">#${docNum}</div>
+          <div style="font-size:11px;color:#aaa;margin-top:4px;">${new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'})}</div>
+        </div>
+      </div>
+      <div class="meta">
+        <div class="meta-block">
+          <div class="lbl">Bill To</div>
+          <div class="val">${customer.name||'Customer'}</div>
+          <div style="font-size:13px;color:#666;margin-top:2px;">${customer.email||''}</div>
+          ${customer.phone?`<div style="font-size:13px;color:#666;">${customer.phone}</div>`:''}
+        </div>
+        <div class="meta-block">
+          <div class="lbl">Order</div>
+          <div class="val">#${order.id}</div>
+          <div style="font-size:13px;color:#666;margin-top:2px;">${order.item_type||''}</div>
+        </div>
+        <div class="meta-block">
+          <div class="lbl">Date</div>
+          <div class="val">${new Date().toLocaleDateString()}</div>
+        </div>
+      </div>
+      <table>
+        <thead><tr><th>Description</th><th style="text-align:right;">Amount</th></tr></thead>
+        <tbody>${rows}</tbody>
+        <tfoot><tr class="total-row"><td>Total</td><td style="text-align:right;">$${subtotal.toFixed(2)}</td></tr></tfoot>
+      </table>
+      ${notes ? `<div class="notes"><strong>Notes:</strong> ${notes}</div>` : ''}
+      <div class="footer">Cope Aesthetic Customs · customs.copeaesthetic.studio · Thank you! 🎨</div>
+    </body></html>`;
+  }
+
+  // Render the saved documents list
+  function renderDocuments() {
+    const docs = (detail.invoices || []);
+    const el   = document.getElementById('invoicesList');
+    if (!el) return;
+
+    if (!docs.length) {
+      el.innerHTML = `<div style="font-size:13px;color:var(--txt-d);padding:16px 0;">No documents yet. Use the fee builder above to generate one.</div>`;
+      return;
+    }
+
+    const TYPE_ICON  = { estimate:'📋', invoice:'🧾', receipt:'✅' };
+    const TYPE_COLOR = { estimate:'var(--chr)', invoice:'var(--gld)', receipt:'var(--ok)' };
+
+    el.innerHTML = `
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--txt-m);padding:14px 0 8px;">Generated Documents</div>
+      ${docs.map(d => {
+        const icon  = TYPE_ICON[d.doc_type]  || '📄';
+        const color = TYPE_COLOR[d.doc_type] || 'var(--gld)';
+        const sent  = d.status === 'sent';
+        return `
+        <div style="display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid var(--b1);flex-wrap:wrap;">
+          <div style="width:36px;height:36px;border-radius:8px;background:rgba(216,188,132,0.1);display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0;">${icon}</div>
+          <div style="flex:1;min-width:160px;">
+            <div style="font-size:13px;font-weight:700;color:var(--txt);">${d.doc_type?d.doc_type.charAt(0).toUpperCase()+d.doc_type.slice(1):'Document'} — #${d.doc_number||''}</div>
             <div style="font-size:12px;color:var(--txt-m);">
-              ${def.amount ? formatCurrency(def.amount) : 'Amount varies — enter when uploading'}
+              ${formatCurrency(d.subtotal||d.amount||0)} · ${(d.line_items||[]).length} line item${(d.line_items||[]).length!==1?'s':''}
             </div>
+            ${d.line_items && d.line_items.length ? `
+              <div style="font-size:11px;color:var(--txt-d);margin-top:3px;">
+                ${d.line_items.map(li => li.label + ': ' + formatCurrency(li.amount)).join(' · ')}
+              </div>` : ''}
           </div>
-
-          <!-- Upload status -->
-          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${statusColor};">
-            ${statusIcon}
-            ${inv && inv.sent_at ? `<span style="font-weight:400;text-transform:none;font-size:10px;color:var(--txt-d);"> · ${formatDate(inv.sent_at)}</span>` : ''}
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${sent?'var(--ok)':'var(--txt-d)'};">
+            ${sent ? '✔ Sent to Customer' : '○ Draft'}
+            ${sent && d.sent_at ? `<div style="font-weight:400;text-transform:none;font-size:10px;color:var(--txt-d);">${formatDate(d.sent_at)}</div>` : ''}
           </div>
-
-          <!-- Actions -->
           <div style="display:flex;gap:8px;flex-wrap:wrap;flex-shrink:0;">
-            ${!inv ? `
-              <!-- Upload button — triggers hidden file input -->
-              <label class="btn btn-out btn-sm" style="cursor:pointer;">
-                ⬆ Upload PDF
-                <input type="file" accept="application/pdf" style="display:none;"
-                  onchange="handleInvoiceUpload(event,'${def.type}','${def.label}',${def.amount || 0})"/>
-              </label>` : ''}
-            ${inv && inv.status === 'uploaded' ? `
-              <!-- Send button — marks as sent and triggers email to customer -->
-              <button class="btn btn-gld btn-sm" onclick="sendInvoice('${def.type}')">
-                📧 Send to Customer
-              </button>` : ''}
-            ${inv && inv.file_url ? `
-              <!-- Download link — opens the uploaded PDF -->
-              <a href="${inv ? inv.file_url : '#'}" target="_blank" class="btn btn-ghost btn-sm">
-                ↓ Download
-              </a>` : ''}
-            ${inv ? `
-              <!-- Re-upload option to replace the existing PDF -->
-              <label class="btn btn-ghost btn-sm" style="cursor:pointer;">
-                ↺ Replace
-                <input type="file" accept="application/pdf" style="display:none;"
-                  onchange="handleInvoiceUpload(event,'${def.type}','${def.label}',${def.amount || 0})"/>
-              </label>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="previewDoc(${d.id})">👁 Preview</button>
+            ${!sent ? `<button class="btn btn-gld btn-sm" onclick="sendDoc(${d.id})">📧 Send to Customer</button>` : ''}
+            ${sent ? `<button class="btn btn-ghost btn-sm" onclick="sendDoc(${d.id})">📧 Resend</button>` : ''}
+            <button class="btn btn-ghost btn-sm" onclick="deleteDoc(${d.id})" style="color:var(--err);">✕</button>
           </div>
         </div>`;
-    }).join('') + `
+      }).join('')}
       <div style="margin-top:12px;padding:10px 12px;background:rgba(216,188,132,0.06);border:1px solid rgba(216,188,132,0.12);border-radius:6px;font-size:12px;color:var(--txt-m);">
-        💡 Sending an invoice emails the PDF to the customer and shows a download link in their portal.
-        <span style="color:var(--txt-d);">Email delivery requires the Flask backend + SendGrid.</span>
+        💡 "Send to Customer" makes the document visible in their portal.
+        <span style="color:var(--txt-d);">Email delivery coming soon via SendGrid.</span>
       </div>`;
   }
 
-  // handleInvoiceUpload() — reads the uploaded PDF file, stores it in window._invoices = window._invoices ||[];
-    window._invoices,
-  // and re-renders the invoice panel.
-  // In production: POST multipart form to /api/orders/:id/invoices
-  function handleInvoiceUpload(event, type, label, amount) {
-    const file = event.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      // Remove any existing invoice of this type for this order
-      // Note: in production, POST /api/orders/:id/invoices with the PDF
-      // For now we track in memory
-      if (!window._invoices) window._invoices = [];
-      const idx = window._invoices.findIndex(i => i.order_id === OID && i.type === type);
-      const newInv = {
-        id: Date.now(), order_id: OID, type, label,
-        amount: amount || 0,
-        status: 'uploaded',
-        uploaded_at: new Date().toISOString(),
-        sent_at: null,
-        file_url: e.target.result, // base64 data URL in mock; real URL from S3/Cloudinary in production
-      };
-      if (idx >= 0) window._invoices[idx] = newInv;
-      else window._invoices.push(newInv);
-      renderInvoices();
-      showToast(`${label} uploaded! Click "Send to Customer" to email it.`);
-    };
-    reader.readAsDataURL(file);
-    event.target.value = '';
+  // Preview a saved doc (regenerate HTML from stored line items)
+  function previewDoc(docId) {
+    const d = (detail.invoices || []).find(i => i.id === docId);
+    if (!d) return;
+    const TYPE_LABEL = { estimate:'Estimate', invoice:'Invoice', receipt:'Receipt' };
+    const pdfHtml = buildDocHtml({
+      docType:   d.doc_type,
+      docNum:    d.doc_number,
+      docLabel:  TYPE_LABEL[d.doc_type] || 'Document',
+      items:     d.line_items || [],
+      subtotal:  d.subtotal || d.amount || 0,
+      notes:     d.notes || '',
+      order:     ORDER,
+      customer:  CUSTOMER,
+    });
+    const win = window.open('', '_blank');
+    win.document.write(pdfHtml);
+    win.document.close();
   }
 
-  // sendInvoice() — marks the invoice as sent and triggers the email.
-  // In production: POST /api/invoices/:id/send
-  // Flask will attach the PDF and send via SendGrid using buildInvoiceEmailHtml()
-  function sendInvoice(type) {
-    const inv = (window._invoices || []).find(i => i.order_id === OID && i.type === type);
-    if (!inv) return;
-    if (!confirm(`Send "${inv.label}" to ${CUSTOMER.name || 'customer'} at ${CUSTOMER.email}?`)) return;
+  // Send a doc to the customer (mark as sent in DB)
+  async function sendDoc(docId) {
+    const d = (detail.invoices || []).find(i => i.id === docId);
+    if (!d) return;
+    const label = d.doc_type ? d.doc_type.charAt(0).toUpperCase()+d.doc_type.slice(1) : 'Document';
+    if (!confirm(`Send ${label} #${d.doc_number} to ${CUSTOMER.name||'customer'} (${CUSTOMER.email})?`)) return;
+    const res = await apiFetch('/api/invoices/' + docId + '/send', { method: 'POST' });
+    if (res && res.invoice) {
+      const idx = detail.invoices.findIndex(i => i.id === docId);
+      if (idx >= 0) detail.invoices[idx] = res.invoice;
+      renderDocuments();
+      showToast(`${label} sent to customer! 📧`);
+    }
+  }
 
-    // Mark as sent in mock data
-    inv.status = 'sent';
-    inv.sent_at = new Date().toISOString();
+  // Delete a doc
+  async function deleteDoc(docId) {
+    if (!confirm('Delete this document? This cannot be undone.')) return;
+    await apiFetch('/api/invoices/' + docId, { method: 'DELETE' });
+    detail.invoices = (detail.invoices || []).filter(i => i.id !== docId);
+    renderDocuments();
+    showToast('Document deleted.');
+  }
 
-    // =====================================================
-    // BACKEND TODO — send invoice email via Flask + SendGrid
-    // =====================================================
-    // await apiFetch('/api/invoices/' + inv.id + '/send', { method: 'POST' })
-    //
-    // Flask will:
-    //   1. Fetch the invoice PDF from storage
-    //   2. Build the email HTML using buildInvoiceEmailHtml()
-    //   3. Attach the PDF and send via SendGrid
-    //   4. Mark invoice.status = 'sent' in the database
-    // =====================================================
-
-    renderInvoices();
-    showToast(`Invoice sent to ${CUSTOMER.email || 'customer'}! 📧`);
+  // ============================================================
+  // CUSTOMER VIEW — open customer portal for this order as admin preview
+  // ============================================================
+  async function openCustomerView() {
+    try {
+      const res = await apiFetch('/api/admin/preview-token', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: ORDER.user_id })
+      });
+      if (res && res.token) {
+        const url = `customer-order-detail.html?id=${OID}&preview_token=${res.token}`;
+        window.open(url, '_blank');
+      }
+    } catch(e) {
+      // Fallback: just open in new tab with current admin token
+      window.open(`customer-order-detail.html?id=${OID}`, '_blank');
+    }
   }
 
   // Helper
   function irow(label, val, cap=false, color='') {
     return `<div><div class="fl">${label}</div><div style="font-size:14px;${cap?'text-transform:capitalize;':''}${color?`color:${color};`:''}">${val}</div></div>`;
   }
+
 
   function renderGallery(id, imgs, allowDel, type) {
     const el = document.getElementById(id);
@@ -561,22 +835,54 @@
       </div>`).join('');
   }
 
+  const galleryMap = {
+    'moodboard':  { arr: () => moodboardImgs, setter: (v) => moodboardImgs = v, galId: 'moodboardGal' },
+    'concept_art':{ arr: () => conceptImgs,   setter: (v) => conceptImgs = v,   galId: 'conceptGal'   },
+    'mockup':     { arr: () => mockupImgs,    setter: (v) => mockupImgs = v,     galId: 'mockupGal'    },
+    'base_photo': { arr: () => basePhoots,    setter: (v) => basePhoots = v,     galId: 'baseGal'      },
+  };
+  let moodboardImgs = [];
+  let conceptImgs   = [];
+
   function handleUpload(e, type) {
-    Array.from(e.target.files).forEach(f=>{
-      const r=new FileReader();
-      r.onload=ev=>{
-        if(type==='mockup') { mockupImgs.push(ev.target.result); renderGallery('mockupGal',mockupImgs,true,'mockup'); }
-        else                { basePhoots.push(ev.target.result); renderGallery('baseGal',basePhoots,false,'base'); }
-        showToast('Image uploaded!');
+    Array.from(e.target.files).forEach(f => {
+      const r = new FileReader();
+      r.onload = async ev => {
+        const url = ev.target.result;
+        // Save to API
+        const res = await apiFetch('/api/orders/' + OID + '/images', {
+          method: 'POST',
+          body: JSON.stringify({ url, type })
+        });
+        if (res && res.ok) {
+          const map = galleryMap[type];
+          if (map) {
+            map.arr().push(url);
+            renderGallery(map.galId, map.arr(), true, type);
+          }
+          showToast('Image uploaded!');
+          // Re-render full page if mockup uploaded (shows approval status)
+          if (type === 'mockup') {
+            const detail = await apiFetch('/api/orders/' + OID);
+            if (detail && detail.ok) {
+              mockups = detail.data.mockups || [];
+              render();
+              renderGallery('mockupGal', mockupImgs, true, 'mockup');
+            }
+          }
+        } else {
+          showToast('Upload failed — image too large or server error.', 'error');
+        }
       };
       r.readAsDataURL(f);
     });
-    e.target.value='';
+    e.target.value = '';
   }
 
   function delImg(type, i) {
     if(!confirm('Remove this image?')) return;
-    if(type==='mockup') { mockupImgs.splice(i,1); renderGallery('mockupGal',mockupImgs,true,'mockup'); }
+    const map = galleryMap[type];
+    if (map) { map.arr().splice(i,1); renderGallery(map.galId, map.arr(), true, type); }
   }
 
   function setupDropZone(zoneId, inputId, cb) {
@@ -782,11 +1088,25 @@
   function closeLb()   { document.getElementById('lb').classList.remove('open'); }
   document.addEventListener('keydown',e=>{ if(e.key==='Escape') closeLb(); });
 
-  // Init — loadOrderDetail() handles all rendering after data loads
-  // Drop zones set up after render() is called inside loadOrderDetail
   function setupDropZonesAfterLoad() {
-    setupDropZone('mockupDrop','mockupFile', imgs => { mockupImgs.push(...imgs); renderGallery('mockupGal',mockupImgs,true,'mockup'); });
-    setupDropZone('baseDrop','baseFile', imgs => { basePhoots.push(...imgs); renderGallery('baseGal',basePhoots,false,'base'); });
+    // Galleries already rendered in loadOrderDetail
+    // Set up drop zones for Buffy's upload sections
+    setupDropZone('moodboardDrop','moodboardFile', imgs => {
+      moodboardImgs.push(...imgs);
+      renderGallery('moodboardGal', moodboardImgs, true, 'moodboard');
+    });
+    setupDropZone('conceptDrop','conceptFile', imgs => {
+      conceptImgs.push(...imgs);
+      renderGallery('conceptGal', conceptImgs, true, 'concept_art');
+    });
+    setupDropZone('mockupDrop','mockupFile', imgs => {
+      mockupImgs.push(...imgs);
+      renderGallery('mockupGal', mockupImgs, true, 'mockup');
+    });
+    setupDropZone('baseDrop','baseFile', imgs => {
+      basePhoots.push(...imgs);
+      renderGallery('baseGal', basePhoots, false, 'base_photo');
+    });
   }
 </script>
 </body>
