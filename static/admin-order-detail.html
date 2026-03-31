@@ -199,6 +199,19 @@
           ${irow('Email', CUSTOMER.email||'—')}
           ${irow('Phone', CUSTOMER.phone||'—')}
           ${irow('Member Since', formatDate(CUSTOMER.created_at))}
+          ${(()=>{
+            const ct = CUSTOMER.customer_type || 'individual';
+            const SPECIAL = {group:'👥 Group', influencer:'⭐ Influencer', nonprofit:'🤝 Non-Profit', organization:'🏢 Organization'};
+            const label = SPECIAL[ct];
+            if (!label) return '';
+            return `<div style="grid-column:1/-1;">
+              <div class="fl">Account Type</div>
+              <div style="display:inline-flex;align-items:center;gap:6px;margin-top:4px;padding:5px 10px;border-radius:20px;background:rgba(231,167,51,0.12);border:1px solid rgba(231,167,51,0.3);font-size:12px;font-weight:700;color:var(--gld);">
+                ${label}
+              </div>
+              <div style="font-size:11px;color:var(--txt-m);margin-top:4px;">Special account type — may qualify for group/collab pricing.</div>
+            </div>`;
+          })()}
         </div>
       </div>
       <div class="card">
