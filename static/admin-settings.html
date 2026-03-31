@@ -274,46 +274,102 @@
 
   // ---- FAQS ----
   let faqs = [];
-  // FAQs loaded async inside buildFaqs
+  // ---- FAQS — fully connected to API ----
   async function buildFaqs(el) {
-    if (!faqs.length) {
-      try {
-        const faqsRes = await apiFetch('/api/faqs');
-        if (faqsRes && faqsRes.ok) faqs = faqsRes.data || [];
-      } catch(e) {}
-    }
+    // Always reload from API when section opens
+    try {
+      const faqsRes = await apiFetch('/api/faqs');
+      if (faqsRes && faqsRes.ok) faqs = faqsRes.data || [];
+    } catch(e) {}
+
     el.innerHTML = `
-      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">These FAQs appear on the customer Terms & FAQs page and Customer Portal.</div>
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">These FAQs appear on the customer Terms & FAQs page and Customer Portal. Changes save to the database immediately.</div>
       <div id="faqEdit"></div>
-      <button class="btn btn-out btn-sm" style="margin-top:10px;" onclick="addFaq()">+ Add FAQ</button>
-      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
-        <button class="btn btn-gld" onclick="saveFaqs()">Save FAQs</button>
-        <span id="faqSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <button class="btn btn-out btn-sm" onclick="addFaq()">+ Add FAQ</button>
+        <button class="btn btn-gld" onclick="saveFaqs()">Save All FAQs</button>
+        <span id="faqSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved to database!</span>
       </div>`;
     renderFaqEdit();
   }
 
   function renderFaqEdit() {
-    document.getElementById('faqEdit').innerHTML = faqs.map((f,i)=>`
+    const el = document.getElementById('faqEdit');
+    if (!el) return;
+    el.innerHTML = faqs.map((f,i) => `
       <div style="background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:14px;margin-bottom:10px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <span style="font-size:10px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt-d);">FAQ ${i+1}</span>
+          <button class="btn btn-err btn-sm" onclick="removeFaq(${i})">Remove</button>
+        </div>
         <div class="fg" style="margin-bottom:10px;">
-          <label class="fl">Question ${i+1}</label>
-          <input type="text" class="fc" value="${f.q}" oninput="faqs[${i}].q=this.value"/>
+          <label class="fl">Question</label>
+          <input type="text" class="fc" id="fq_${i}" value="${(f.q||f.question||'').replace(/"/g,'&quot;')}" oninput="faqs[${i}].q=this.value;faqs[${i}].question=this.value"/>
         </div>
-        <div class="fg" style="margin-bottom:8px;">
+        <div class="fg" style="margin-bottom:0;">
           <label class="fl">Answer</label>
-          <textarea class="fc" rows="2" oninput="faqs[${i}].a=this.value">${f.a}</textarea>
+          <textarea class="fc" rows="2" id="fa_${i}" oninput="faqs[${i}].a=this.value;faqs[${i}].answer=this.value">${f.a||f.answer||''}</textarea>
         </div>
-        <button class="btn btn-err btn-sm" onclick="faqs.splice(${i},1);renderFaqEdit()">Remove</button>
-      </div>`).join('') || '<div style="font-size:13px;color:var(--txt-d);">No FAQs yet.</div>';
+      </div>`).join('') || '<div style="font-size:13px;color:var(--txt-d);padding:20px 0;">No FAQs yet. Click + Add FAQ to create one.</div>';
   }
 
-  function addFaq() { faqs.push({q:'',a:''}); renderFaqEdit(); }
+  function addFaq() {
+    faqs.push({ q:'', a:'', question:'', answer:'' });
+    renderFaqEdit();
+    // Scroll to bottom of faqEdit
+    const el = document.getElementById('faqEdit');
+    if(el) el.lastElementChild?.scrollIntoView({ behavior:'smooth' });
+  }
 
-  function saveFaqs() {
-    // FAQs saved to server — TODO: add POST /api/faqs endpoint
-    const el=document.getElementById('faqSv'); el.style.display='inline'; setTimeout(()=>el.style.display='none',3000);
-    showToast('FAQs saved!');
+  function removeFaq(i) {
+    faqs.splice(i, 1);
+    renderFaqEdit();
+  }
+
+  async function saveFaqs() {
+    const el = document.getElementById('faqSv');
+    // Validate all FAQs have content
+    const valid = faqs.filter(f => (f.q||f.question||'').trim() && (f.a||f.answer||'').trim());
+    if (valid.length !== faqs.length) {
+      showToast('Please fill in all FAQ questions and answers before saving.', 'warning');
+      return;
+    }
+
+    // Strategy: delete all existing FAQs then recreate
+    // First get existing IDs
+    const existing = await apiFetch('/api/faqs');
+    if (existing && existing.ok) {
+      // Delete all existing
+      for (const faq of existing.data) {
+        await apiFetch('/api/faqs/' + faq.id, { method: 'DELETE' });
+      }
+    }
+
+    // Create all current FAQs in order
+    let allOk = true;
+    for (let i = 0; i < valid.length; i++) {
+      const f = valid[i];
+      const res = await apiFetch('/api/faqs', {
+        method: 'POST',
+        body: JSON.stringify({
+          question:   (f.q||f.question||'').trim(),
+          answer:     (f.a||f.answer||'').trim(),
+          sort_order: i,
+        })
+      });
+      if (!res || !res.ok) { allOk = false; }
+    }
+
+    if (allOk) {
+      el.style.display='inline';
+      setTimeout(()=>el.style.display='none', 3000);
+      showToast('FAQs saved to database!');
+      // Reload to get real IDs
+      const reloaded = await apiFetch('/api/faqs');
+      if (reloaded && reloaded.ok) faqs = reloaded.data;
+    } else {
+      showToast('Some FAQs failed to save', 'error');
+    }
   }
 
   // ---- PRICING ----
