@@ -59,6 +59,7 @@ class User(db.Model):
     password_hash = db.Column(db.String(512))  # stored as bcrypt hash
     notify_email  = db.Column(db.Boolean, default=True)
     notify_sms    = db.Column(db.Boolean, default=False)
+    is_active     = db.Column(db.Boolean, default=True)
     created_at    = db.Column(db.DateTime, default=datetime.datetime.utcnow)
 
     def to_dict(self):
@@ -70,6 +71,7 @@ class User(db.Model):
             'phone':        self.phone,
             'notify_email': self.notify_email,
             'notify_sms':   self.notify_sms,
+            'is_active':    self.is_active if self.is_active is not None else True,
             'created_at':   self.created_at.isoformat() if self.created_at else None,
         }
 
@@ -265,37 +267,44 @@ class AddOn(db.Model):
 
 
 class Invoice(db.Model):
-    # NOTE: This table may not exist in CustomFlow.sql yet.
-    # Run this SQL on Railway to create it:
-    # CREATE TABLE invoices (
-    #   id SERIAL PRIMARY KEY,
-    #   order_id INT REFERENCES orders(id),
-    #   type VARCHAR(255),
-    #   label VARCHAR(255),
-    #   amount NUMERIC(10,2),
-    #   status VARCHAR(255) DEFAULT 'uploaded',
-    #   file_url TEXT,
-    #   uploaded_at TIMESTAMP DEFAULT NOW(),
-    #   sent_at TIMESTAMP
-    # );
+    # SQL to add new columns if upgrading existing table:
+    # ALTER TABLE invoices ADD COLUMN IF NOT EXISTS doc_type VARCHAR(20) DEFAULT 'invoice';
+    # ALTER TABLE invoices ADD COLUMN IF NOT EXISTS doc_number VARCHAR(50);
+    # ALTER TABLE invoices ADD COLUMN IF NOT EXISTS line_items TEXT;
+    # ALTER TABLE invoices ADD COLUMN IF NOT EXISTS subtotal NUMERIC(10,2);
+    # ALTER TABLE invoices ADD COLUMN IF NOT EXISTS notes TEXT;
+    #
+    # doc_type: 'estimate' | 'invoice' | 'receipt'
+    # doc_number format: YYYYOrderID + E/I/R  e.g. 20261011E
     __tablename__ = 'invoices'
     id          = db.Column(db.Integer, primary_key=True)
     order_id    = db.Column(db.Integer, db.ForeignKey('orders.id'), nullable=False)
-    type        = db.Column(db.String(255))   # booking | custom | rush | cleaning | final
+    type        = db.Column(db.String(255))   # booking | custom | rush | cleaning | final | custom_addon
     label       = db.Column(db.String(255))
     amount      = db.Column(db.Numeric(10, 2))
-    status      = db.Column(db.String(255), default='uploaded')  # uploaded | sent
+    doc_type    = db.Column(db.String(20), default='invoice')  # estimate | invoice | receipt
+    doc_number  = db.Column(db.String(50))   # e.g. 20261011E
+    line_items  = db.Column(db.Text)          # JSON string of [{label, amount}]
+    subtotal    = db.Column(db.Numeric(10, 2))
+    notes       = db.Column(db.Text)
+    status      = db.Column(db.String(255), default='draft')  # draft | sent
     file_url    = db.Column(db.Text)
     uploaded_at = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     sent_at     = db.Column(db.DateTime)
 
     def to_dict(self):
+        import json as _json
         return {
             'id':          self.id,
             'order_id':    self.order_id,
             'type':        self.type,
             'label':       self.label,
             'amount':      float(self.amount) if self.amount else None,
+            'doc_type':    self.doc_type,
+            'doc_number':  self.doc_number,
+            'line_items':  _json.loads(self.line_items) if self.line_items else [],
+            'subtotal':    float(self.subtotal) if self.subtotal else None,
+            'notes':       self.notes,
             'status':      self.status,
             'file_url':    self.file_url,
             'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None,
@@ -322,6 +331,28 @@ class Faq(db.Model):
             'question':   self.question,
             'answer':     self.answer,
             'sort_order': self.sort_order,
+        }
+
+
+class PricingTier(db.Model):
+    __tablename__ = 'pricing_tiers'
+    id          = db.Column(db.Integer, primary_key=True)
+    name        = db.Column(db.String(255), nullable=False)
+    price_from  = db.Column(db.Integer, default=0)
+    price_label = db.Column(db.String(255))   # e.g. "$75+" or "Varies"
+    description = db.Column(db.Text)
+    sort_order  = db.Column(db.Integer, default=0)
+    is_active   = db.Column(db.Boolean, default=True)
+
+    def to_dict(self):
+        return {
+            'id':          self.id,
+            'name':        self.name,
+            'price_from':  self.price_from,
+            'price_label': self.price_label,
+            'description': self.description,
+            'sort_order':  self.sort_order,
+            'is_active':   self.is_active if self.is_active is not None else True,
         }
 
 
@@ -429,6 +460,8 @@ def login():
     user = User.query.filter_by(email=data['email'].lower().strip()).first()
     if not user or not check_password_hash(user.password_hash or '', data['password']):
         return jsonify({'error': 'Invalid email or password'}), 401
+    if user.is_active is False:
+        return jsonify({'error': 'This account has been deactivated. Please contact Buffy.'}), 403
 
     token = generate_token(user.id, user.role)
     return jsonify({'token': token, 'user': user.to_dict()})
@@ -473,6 +506,27 @@ def register():
 
     token = generate_token(user.id, user.role)
     return jsonify({'token': token, 'user': user.to_dict()}), 201
+
+
+@app.route('/api/admin/preview-token', methods=['POST'])
+@require_admin
+def admin_preview_token():
+    """
+    POST /api/admin/preview-token
+    Body: { user_id }
+    Returns: { token } — a short-lived customer-scoped token so Buffy can
+    preview any customer's portal without logging in as them.
+
+    Called by: admin-order-detail.html "👁 Customer View" button.
+    The frontend opens customer-order-detail.html?id=X&preview_token=TOKEN
+    """
+    data    = request.get_json() or {}
+    user_id = data.get('user_id')
+    if not user_id:
+        return jsonify({'error': 'user_id required'}), 400
+    user = User.query.get_or_404(user_id)
+    token = generate_token(user.id, user.role)
+    return jsonify({'token': token, 'user': user.to_dict()})
 
 
 # ============================================================
@@ -741,6 +795,97 @@ def create_revision():
 # API: ADD-ONS
 # ============================================================
 
+@app.route('/api/orders/<int:order_id>/images', methods=['POST'])
+@require_admin
+def upload_order_image(order_id):
+    """
+    POST /api/orders/<id>/images
+    Body: { url, type }
+    type: 'moodboard' | 'concept_art' | 'mockup' | 'reference' | 'base_photo'
+    Buffy uploads images for each stage of the design process.
+    In production the url will be a Cloudinary/S3 link.
+    For now accepts a base64 data URL or any URL string.
+    Called by: admin-order-detail.html upload sections
+    """
+    data = request.get_json()
+    if not data or not data.get('url') or not data.get('type'):
+        return jsonify({'error': 'url and type required'}), 400
+
+    image = OrderImage(
+        order_id    = order_id,
+        url         = data['url'],
+        type        = data['type'],
+    )
+    db.session.add(image)
+
+    # If uploading a mockup, also create a mockup record
+    if data['type'] == 'mockup':
+        mockup = Mockup(
+            order_id       = order_id,
+            image_url      = data['url'],
+            approved       = False,
+            revision_limit = 3,
+        )
+        db.session.add(mockup)
+
+    db.session.commit()
+    return jsonify({'image': image.to_dict()}), 201
+
+
+@app.route('/api/orders/<int:order_id>/images/<int:image_id>', methods=['DELETE'])
+@require_admin
+def delete_order_image(order_id, image_id):
+    """DELETE /api/orders/<id>/images/<image_id> — remove an uploaded image."""
+    image = OrderImage.query.filter_by(id=image_id, order_id=order_id).first_or_404()
+    db.session.delete(image)
+    db.session.commit()
+    return jsonify({'deleted': image_id})
+
+
+@app.route('/api/mockups/<int:mockup_id>/approve', methods=['POST'])
+@require_auth
+def approve_mockup(mockup_id):
+    """
+    POST /api/mockups/<id>/approve
+    Body: { approved: true/false, note: 'optional note' }
+    Customer approves or requests changes on a mockup.
+    If approved=false, creates a revision request with the customer's note.
+    Called by: customer-order-detail.html mockup section
+    """
+    mockup = Mockup.query.get_or_404(mockup_id)
+    data = request.get_json() or {}
+    approved = data.get('approved', True)
+
+    mockup.approved = approved
+    if approved:
+        mockup.approval_at = datetime.datetime.utcnow()
+    
+    db.session.flush()
+
+    if not approved:
+        # Create a revision request with the customer's note
+        existing_count = Revision.query.filter_by(order_id=mockup.order_id).count()
+        revision_number = existing_count + 1
+        charge_amount = 0 if revision_number <= 3 else 20.00
+
+        revision = Revision(
+            order_id        = mockup.order_id,
+            mockup_id       = mockup_id,
+            revision_number = revision_number,
+            notes           = data.get('note', 'Customer requested changes'),
+            charge_amount   = charge_amount,
+        )
+        db.session.add(revision)
+
+    db.session.commit()
+
+    return jsonify({
+        'approved':  mockup.approved,
+        'mockup_id': mockup_id,
+        'message':   'Mockup approved!' if approved else 'Revision request submitted.',
+    })
+
+
 @app.route('/api/add_ons', methods=['POST'])
 @require_admin
 def create_addon():
@@ -798,27 +943,110 @@ def create_consult():
 
 
 # ============================================================
-# API: INVOICES
+# API: INVOICES / ESTIMATES / RECEIPTS
 # ============================================================
+
+def _doc_number(order_id, created_at, doc_type):
+    """Build document number: YYYYOrderID + E/I/R  e.g. 20261011E"""
+    import json as _json
+    year = (created_at or datetime.datetime.utcnow()).year
+    suffix = {'estimate': 'E', 'invoice': 'I', 'receipt': 'R'}.get(doc_type, 'I')
+    return f"{year}{order_id}{suffix}"
+
 
 @app.route('/api/orders/<int:order_id>/invoices', methods=['GET'])
 @require_auth
 def get_invoices(order_id):
     """
     GET /api/orders/<id>/invoices
-    Returns all invoices for an order.
-    Customers only see invoices with status='sent'.
-
-    Called by: customer-order-detail.html, admin-order-detail.html
+    Returns all documents (estimates, invoices, receipts) for an order.
+    Customers only see sent docs. Admins see all.
     """
     try:
         if request.user_role in ['owner', 'employee']:
-            invoices = Invoice.query.filter_by(order_id=order_id).all()
+            docs = Invoice.query.filter_by(order_id=order_id).order_by(Invoice.uploaded_at.desc()).all()
         else:
-            invoices = Invoice.query.filter_by(order_id=order_id, status='sent').all()
-        return jsonify([i.to_dict() for i in invoices])
+            docs = Invoice.query.filter_by(order_id=order_id, status='sent').order_by(Invoice.uploaded_at.desc()).all()
+        return jsonify([d.to_dict() for d in docs])
     except Exception:
-        return jsonify([])  # invoices table may not exist yet
+        return jsonify([])
+
+
+@app.route('/api/orders/<int:order_id>/invoices', methods=['POST'])
+@require_admin
+def create_invoice(order_id):
+    """
+    POST /api/orders/<id>/invoices
+    Creates a new estimate, invoice, or receipt from fee line items.
+
+    Body: {
+      doc_type: 'estimate' | 'invoice' | 'receipt',
+      line_items: [{ label: str, amount: float }],
+      notes: str (optional)
+    }
+
+    Returns: { invoice } with doc_number assigned.
+    Called by: admin-order-detail.html Generate buttons.
+    """
+    import json as _json
+    data = request.get_json() or {}
+    doc_type   = data.get('doc_type', 'invoice')
+    line_items = data.get('line_items', [])
+    notes      = data.get('notes', '')
+
+    if not line_items:
+        return jsonify({'error': 'No line items provided'}), 400
+
+    subtotal = sum(float(li.get('amount', 0)) for li in line_items)
+    now      = datetime.datetime.utcnow()
+
+    inv = Invoice(
+        order_id   = order_id,
+        doc_type   = doc_type,
+        doc_number = _doc_number(order_id, now, doc_type),
+        line_items = _json.dumps(line_items),
+        subtotal   = subtotal,
+        amount     = subtotal,
+        label      = doc_type.capitalize(),
+        notes      = notes,
+        status     = 'draft',
+        uploaded_at= now,
+    )
+    db.session.add(inv)
+    db.session.commit()
+    return jsonify({'invoice': inv.to_dict()}), 201
+
+
+@app.route('/api/invoices/<int:invoice_id>', methods=['PATCH'])
+@require_admin
+def update_invoice(invoice_id):
+    """
+    PATCH /api/invoices/<id>
+    Update line items, notes, or file_url on an existing doc.
+    """
+    import json as _json
+    data    = request.get_json() or {}
+    invoice = Invoice.query.get_or_404(invoice_id)
+
+    if 'line_items' in data:
+        invoice.line_items = _json.dumps(data['line_items'])
+        invoice.subtotal   = sum(float(li.get('amount', 0)) for li in data['line_items'])
+        invoice.amount     = invoice.subtotal
+    if 'notes'     in data: invoice.notes    = data['notes']
+    if 'file_url'  in data: invoice.file_url = data['file_url']
+
+    db.session.commit()
+    return jsonify({'invoice': invoice.to_dict()})
+
+
+@app.route('/api/invoices/<int:invoice_id>', methods=['DELETE'])
+@require_admin
+def delete_invoice(invoice_id):
+    """DELETE /api/invoices/<id>  — removes the doc entirely."""
+    invoice = Invoice.query.get_or_404(invoice_id)
+    db.session.delete(invoice)
+    db.session.commit()
+    return jsonify({'deleted': invoice_id})
 
 
 @app.route('/api/invoices/<int:invoice_id>/send', methods=['POST'])
@@ -826,12 +1054,10 @@ def get_invoices(order_id):
 def send_invoice(invoice_id):
     """
     POST /api/invoices/<id>/send
-    Marks invoice as sent and triggers email to customer.
+    Marks document as sent so it appears in the customer portal.
 
-    Called by: admin-order-detail.html when Buffy clicks "Send to Customer"
-
-    TODO: Attach PDF and send via SendGrid.
-    See buildInvoiceEmailHtml() in static/core.js for the email template.
+    Called by: admin-order-detail.html "Send to Customer" button.
+    TODO: also email PDF via SendGrid.
     """
     try:
         invoice = Invoice.query.get_or_404(invoice_id)
@@ -839,12 +1065,10 @@ def send_invoice(invoice_id):
         invoice.sent_at = datetime.datetime.utcnow()
         db.session.commit()
 
-        # TODO: Send invoice email via SendGrid
-        # order = Order.query.get(invoice.order_id)
+        # TODO: Send email via SendGrid with PDF attachment
+        # order    = Order.query.get(invoice.order_id)
         # customer = User.query.get(order.user_id)
-        # html = buildInvoiceEmailHtml(customer.name, order.item_type,
-        #                              order.id, invoice.label, invoice.amount)
-        # send_via_sendgrid(to=customer.email, subject='New Invoice', html=html)
+        # send_via_sendgrid(...)
 
         return jsonify({'invoice': invoice.to_dict()})
     except Exception as e:
@@ -1013,12 +1237,74 @@ def get_reports():
 def get_users():
     """
     GET /api/users
-    Returns all non-customer users (admins and employees).
-
+    Returns all users — both customers and admins.
+    Supports ?role=customer or ?role=admin filter.
     Called by: admin-settings.html → User Management section
     """
-    users = User.query.filter(User.role.in_(['owner', 'employee'])).all()
+    role_filter = request.args.get('role')
+    if role_filter == 'customer':
+        users = User.query.filter_by(role='customer').order_by(User.created_at.desc()).all()
+    elif role_filter == 'admin':
+        users = User.query.filter(User.role.in_(['owner', 'employee'])).order_by(User.created_at.desc()).all()
+    else:
+        users = User.query.order_by(User.created_at.desc()).all()
     return jsonify([u.to_dict() for u in users])
+
+
+@app.route('/api/users/<int:user_id>', methods=['GET'])
+@require_admin
+def get_user(user_id):
+    """GET /api/users/<id> — get a single user's full profile."""
+    user = User.query.get_or_404(user_id)
+    return jsonify(user.to_dict())
+
+
+@app.route('/api/users/<int:user_id>', methods=['PATCH'])
+@require_admin
+def update_user(user_id):
+    """
+    PATCH /api/users/<id>
+    Body: { name, email, phone, role, is_active }
+    Buffy can edit any user's details, role, or active status.
+    Called by: admin-settings.html → User Management
+    """
+    user = User.query.get_or_404(user_id)
+    data = request.get_json()
+
+    # Prevent Buffy from accidentally deactivating herself
+    if str(user_id) == str(request.user_id) and 'is_active' in data and not data['is_active']:
+        return jsonify({'error': 'You cannot deactivate your own account'}), 400
+
+    if 'name'      in data: user.name      = data['name'].strip()
+    if 'email'     in data:
+        # Check email not taken by someone else
+        existing = User.query.filter_by(email=data['email'].lower().strip()).first()
+        if existing and existing.id != user_id:
+            return jsonify({'error': 'Email already in use'}), 409
+        user.email = data['email'].lower().strip()
+    if 'phone'     in data: user.phone     = data['phone']
+    if 'role'      in data: user.role      = data['role']
+    if 'is_active' in data: user.is_active = data['is_active']
+
+    db.session.commit()
+    return jsonify(user.to_dict())
+
+
+@app.route('/api/users/<int:user_id>', methods=['DELETE'])
+@require_admin
+def delete_user(user_id):
+    """
+    DELETE /api/users/<id>
+    Permanently deletes a user account.
+    Cannot delete yourself.
+    Called by: admin-settings.html → User Management
+    """
+    if str(user_id) == str(request.user_id):
+        return jsonify({'error': 'You cannot delete your own account'}), 400
+    user = User.query.get_or_404(user_id)
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'deleted': user_id})
 
 
 @app.route('/api/users/me', methods=['GET'])
@@ -1137,6 +1423,68 @@ def update_booking_settings():
         return jsonify({'error': str(e)}), 500
 
 
+@app.route('/api/pricing_tiers', methods=['GET'])
+def get_pricing_tiers():
+    """GET /api/pricing_tiers — public, returns all active pricing tiers."""
+    try:
+        from sqlalchemy import text
+        tiers = db.session.execute(text(
+            "SELECT * FROM pricing_tiers ORDER BY sort_order, id"
+        )).fetchall()
+        return jsonify([dict(row._mapping) for row in tiers])
+    except Exception:
+        return jsonify([])
+
+
+@app.route('/api/pricing_tiers', methods=['POST'])
+@require_admin
+def create_pricing_tier():
+    """POST /api/pricing_tiers — create a new pricing tier."""
+    data = request.get_json()
+    from sqlalchemy import text
+    db.session.execute(text(
+        "INSERT INTO pricing_tiers (name, price_from, price_label, description, sort_order, is_active) "
+        "VALUES (:name, :price_from, :price_label, :description, :sort_order, :is_active)"
+    ), {
+        'name':        data.get('name', ''),
+        'price_from':  data.get('price_from', 0),
+        'price_label': data.get('price_label', ''),
+        'description': data.get('description', ''),
+        'sort_order':  data.get('sort_order', 0),
+        'is_active':   data.get('is_active', True),
+    })
+    db.session.commit()
+    return jsonify({'message': 'Created'}), 201
+
+
+@app.route('/api/pricing_tiers/<int:tier_id>', methods=['PATCH'])
+@require_admin
+def update_pricing_tier(tier_id):
+    """PATCH /api/pricing_tiers/<id> — update a pricing tier."""
+    data = request.get_json()
+    from sqlalchemy import text
+    updates = []
+    params = {'id': tier_id}
+    for field in ['name', 'price_from', 'price_label', 'description', 'sort_order', 'is_active']:
+        if field in data:
+            updates.append(f"{field} = :{field}")
+            params[field] = data[field]
+    if updates:
+        db.session.execute(text(f"UPDATE pricing_tiers SET {', '.join(updates)} WHERE id = :id"), params)
+        db.session.commit()
+    return jsonify({'message': 'Updated'})
+
+
+@app.route('/api/pricing_tiers/<int:tier_id>', methods=['DELETE'])
+@require_admin
+def delete_pricing_tier(tier_id):
+    """DELETE /api/pricing_tiers/<id> — delete a pricing tier."""
+    from sqlalchemy import text
+    db.session.execute(text("DELETE FROM pricing_tiers WHERE id = :id"), {'id': tier_id})
+    db.session.commit()
+    return jsonify({'deleted': tier_id})
+
+
 @app.route('/api/faqs', methods=['GET'])
 def get_faqs():
     """
@@ -1214,6 +1562,155 @@ def delete_faq(faq_id):
     db.session.delete(faq)
     db.session.commit()
     return jsonify({'deleted': faq_id})
+
+
+# ============================================================
+# API: PRICING TIERS
+# ============================================================
+
+@app.route('/api/pricing_tiers', methods=['GET'])
+def get_pricing_tiers():
+    """GET /api/pricing_tiers — returns all active pricing tiers sorted by sort_order."""
+    try:
+        tiers = PricingTier.query.filter_by(is_active=True).order_by(PricingTier.sort_order, PricingTier.id).all()
+        return jsonify([t.to_dict() for t in tiers])
+    except Exception:
+        return jsonify([])
+
+
+@app.route('/api/pricing_tiers/all', methods=['GET'])
+@require_admin
+def get_all_pricing_tiers():
+    """GET /api/pricing_tiers/all — returns ALL tiers including inactive (admin only)."""
+    try:
+        tiers = PricingTier.query.order_by(PricingTier.sort_order, PricingTier.id).all()
+        return jsonify([t.to_dict() for t in tiers])
+    except Exception:
+        return jsonify([])
+
+
+@app.route('/api/pricing_tiers', methods=['POST'])
+@require_admin
+def create_pricing_tier():
+    """POST /api/pricing_tiers — create a new pricing tier."""
+    data = request.get_json()
+    if not data or not data.get('name'):
+        return jsonify({'error': 'name required'}), 400
+    tier = PricingTier(
+        name        = data['name'].strip(),
+        price_from  = data.get('price_from', 0),
+        price_label = data.get('price_label', ''),
+        description = data.get('description', ''),
+        sort_order  = data.get('sort_order', 0),
+        is_active   = data.get('is_active', True),
+    )
+    db.session.add(tier)
+    db.session.commit()
+    return jsonify(tier.to_dict()), 201
+
+
+@app.route('/api/pricing_tiers/<int:tier_id>', methods=['PATCH'])
+@require_admin
+def update_pricing_tier(tier_id):
+    """PATCH /api/pricing_tiers/<id> — update a pricing tier."""
+    tier = PricingTier.query.get_or_404(tier_id)
+    data = request.get_json()
+    if 'name'        in data: tier.name        = data['name'].strip()
+    if 'price_from'  in data: tier.price_from  = data['price_from']
+    if 'price_label' in data: tier.price_label = data['price_label']
+    if 'description' in data: tier.description = data['description']
+    if 'sort_order'  in data: tier.sort_order  = data['sort_order']
+    if 'is_active'   in data: tier.is_active   = data['is_active']
+    db.session.commit()
+    return jsonify(tier.to_dict())
+
+
+@app.route('/api/pricing_tiers/<int:tier_id>', methods=['DELETE'])
+@require_admin
+def delete_pricing_tier(tier_id):
+    """DELETE /api/pricing_tiers/<id> — delete a pricing tier."""
+    tier = PricingTier.query.get_or_404(tier_id)
+    db.session.delete(tier)
+    db.session.commit()
+    return jsonify({'deleted': tier_id})
+
+
+# ============================================================
+# API: MOCKUP APPROVAL
+# ============================================================
+
+@app.route('/api/mockups', methods=['POST'])
+@require_admin
+def create_mockup():
+    """
+    POST /api/mockups
+    Body: { order_id, image_url, type }
+    type: 'moodboard' | 'concept_art' | 'mockup'
+    Buffy uploads design assets for an order.
+    """
+    data = request.get_json()
+    if not data or not data.get('order_id'):
+        return jsonify({'error': 'order_id required'}), 400
+    mockup = Mockup(
+        order_id  = data['order_id'],
+        image_url = data.get('image_url', ''),
+    )
+    db.session.add(mockup)
+    # Also log in order_images with type
+    image_type = data.get('type', 'mockup')
+    img = OrderImage(
+        order_id = data['order_id'],
+        url      = data.get('image_url', ''),
+        type     = image_type,
+    )
+    db.session.add(img)
+    db.session.commit()
+    return jsonify({'mockup': mockup.to_dict()}), 201
+
+
+@app.route('/api/mockups/<int:mockup_id>/approve', methods=['POST'])
+@require_auth
+def approve_mockup(mockup_id):
+    """
+    POST /api/mockups/<id>/approve
+    Body: { approved: true/false, notes: "change notes if rejecting" }
+    Customer approves or requests changes on a mockup.
+    If not approved, creates a revision request with the customer's notes.
+    """
+    mockup = Mockup.query.get_or_404(mockup_id)
+    order  = Order.query.get_or_404(mockup.order_id)
+
+    # Only the customer who owns the order can approve
+    if request.user_role == 'customer' and order.user_id != request.user_id:
+        return jsonify({'error': 'Not authorized'}), 403
+
+    data     = request.get_json()
+    approved = data.get('approved', False)
+    notes    = data.get('notes', '')
+
+    mockup.approved = approved
+    if approved:
+        mockup.approval_at = datetime.datetime.utcnow()
+    else:
+        # Create a revision request with the customer's change notes
+        existing_count = Revision.query.filter_by(order_id=mockup.order_id).count()
+        revision_number = existing_count + 1
+        charge_amount = 0 if revision_number <= 3 else 20.00
+        revision = Revision(
+            order_id        = mockup.order_id,
+            mockup_id       = mockup_id,
+            revision_number = revision_number,
+            notes           = notes or 'Customer requested changes',
+            charge_amount   = charge_amount,
+        )
+        db.session.add(revision)
+
+    db.session.commit()
+    return jsonify({
+        'mockup':   mockup.to_dict(),
+        'approved': approved,
+        'message':  'Mockup approved!' if approved else 'Changes requested — Buffy has been notified.',
+    })
 
 
 # ============================================================
