@@ -131,11 +131,11 @@
     ORDER      = d.order || {};
     CUSTOMER   = d.customer || {};
     USERS[CUSTOMER.id] = CUSTOMER;
-    custPhotos    = (d.order_images||[]).filter(i=>i.type==='reference').map(i=>i.url||'').filter(Boolean);
-    basePhoots    = (d.order_images||[]).filter(i=>i.type==='base_photo').map(i=>i.url||'').filter(Boolean);
-    mockupImgs    = (d.order_images||[]).filter(i=>i.type==='mockup').map(i=>i.url||'').filter(Boolean);
-    moodboardImgs = (d.order_images||[]).filter(i=>i.type==='moodboard').map(i=>i.url||'').filter(Boolean);
-    conceptImgs   = (d.order_images||[]).filter(i=>i.type==='concept_art').map(i=>i.url||'').filter(Boolean);
+    custPhotos    = (d.order_images||[]).filter(i=>i.type==='reference');
+    basePhoots    = (d.order_images||[]).filter(i=>i.type==='base_photo');
+    mockupImgs    = (d.order_images||[]).filter(i=>i.type==='mockup');
+    moodboardImgs = (d.order_images||[]).filter(i=>i.type==='moodboard');
+    conceptImgs   = (d.order_images||[]).filter(i=>i.type==='concept_art');
     mockups    = d.mockups || [];
     revisions  = d.revisions || [];
     payments   = d.payments || [];
@@ -888,11 +888,15 @@
     const el = document.getElementById(id);
     if(!el) return;
     if(!imgs.length) { el.innerHTML=`<div class="gmt">No images yet.</div>`; return; }
-    el.innerHTML = imgs.map((src,i)=>`
+    el.innerHTML = imgs.map((img,i)=>{
+      const src = typeof img === 'string' ? img : (img.url || '');
+      const placeholder = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%231F1F1F%22 width=%22100%22 height=%22100%22/%3E%3Ctext fill=%22%23444%22 x=%2250%22 y=%2255%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo image%3C/text%3E%3C/svg%3E';
+      return `
       <div class="gthumb">
-        <img src="${src||'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22100%22 height=%22100%22%3E%3Crect fill=%22%231F1F1F%22 width=%22100%22 height=%22100%22/%3E%3Ctext fill=%22%23444%22 x=%2250%22 y=%2255%22 text-anchor=%22middle%22 font-size=%2212%22%3ENo image%3C/text%3E%3C/svg%3E'}" onclick="openLb(this.src)"/>
+        <img src="${src||placeholder}" onclick="openLb(this.src)"/>
         ${allowDel?`<button class="gdel" onclick="delImg('${type}',${i})">✕</button>`:''}
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
 
   const galleryMap = {
@@ -915,7 +919,8 @@
         if (res && res.ok) {
           const map = galleryMap[type];
           if (map) {
-            map.arr().push(url);
+            // Store the full image object (with id) so we can delete it later
+            map.arr().push(res.data.image || { url, type });
             renderGallery(map.galId, map.arr(), true, type);
           }
           showToast('Image uploaded!');
@@ -923,7 +928,8 @@
           if (type === 'mockup') {
             const detail = await apiFetch('/api/orders/' + OID);
             if (detail && detail.ok) {
-              mockups = detail.data.mockups || [];
+              mockups    = detail.data.mockups || [];
+              mockupImgs = (detail.data.order_images||[]).filter(i=>i.type==='mockup');
               render();
               renderGallery('mockupGal', mockupImgs, true, 'mockup');
             }
@@ -937,10 +943,23 @@
     e.target.value = '';
   }
 
-  function delImg(type, i) {
-    if(!confirm('Remove this image?')) return;
+  async function delImg(type, i) {
+    if (!confirm('Remove this image?')) return;
     const map = galleryMap[type];
-    if (map) { map.arr().splice(i,1); renderGallery(map.galId, map.arr(), true, type); }
+    if (!map) return;
+    const img = map.arr()[i];
+    const imgId = typeof img === 'object' ? img.id : null;
+    // Delete from DB if we have an ID
+    if (imgId) {
+      const res = await apiFetch('/api/orders/' + OID + '/images/' + imgId, { method: 'DELETE' });
+      if (!res || !res.ok) {
+        showToast('Failed to delete image — please try again.', 'error');
+        return;
+      }
+    }
+    map.arr().splice(i, 1);
+    renderGallery(map.galId, map.arr(), true, type);
+    showToast('Image removed.');
   }
 
   function setupDropZone(zoneId, inputId, cb) {
