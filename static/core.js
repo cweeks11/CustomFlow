@@ -248,13 +248,11 @@ async function apiFetch(endpoint, options = {}) {
   const token = localStorage.getItem('admin_token') || localStorage.getItem('customer_token');
   const headers = {
     'Content-Type': 'application/json',
-    // Attach JWT token as Bearer — Flask reads this to identify the user
     ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
     ...options.headers,
   };
   try {
     const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
-    // Token expired or invalid — clear storage and redirect to login
     if (res.status === 401) {
       const wasAdmin = !!localStorage.getItem('admin_token');
       localStorage.removeItem('admin_token');
@@ -265,8 +263,32 @@ async function apiFetch(endpoint, options = {}) {
     const data = await res.json();
     return { ok: res.ok, status: res.status, data };
   } catch (err) {
-    // Network error — Flask is down or no internet connection
     console.error('apiFetch error:', err);
+    return null;
+  }
+}
+
+// customerApiFetch() — same as apiFetch but ONLY uses customer_token, never admin_token.
+// Use this on all customer-facing pages so an admin logged in on the same browser
+// doesn't accidentally see all orders instead of just their own.
+async function customerApiFetch(endpoint, options = {}) {
+  const token = localStorage.getItem('customer_token');
+  const headers = {
+    'Content-Type': 'application/json',
+    ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+    ...options.headers,
+  };
+  try {
+    const res = await fetch(`${API_BASE}${endpoint}`, { ...options, headers });
+    if (res.status === 401) {
+      localStorage.removeItem('customer_token');
+      window.location.href = 'customer-login.html';
+      return null;
+    }
+    const data = await res.json();
+    return { ok: res.ok, status: res.status, data };
+  } catch (err) {
+    console.error('customerApiFetch error:', err);
     return null;
   }
 }
