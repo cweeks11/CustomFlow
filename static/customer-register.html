@@ -46,7 +46,7 @@
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Create Account — Cope Aesthetic Customs</title>
   <link rel="stylesheet" href="styles.css"/>
-  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <script src="https://www.google.com/recaptcha/api.js?render=6LfyeaEsAAAAABP6lwsV5v5cTn5zrHuU1enffCII" async defer></script>
   <!-- reCAPTCHA script — uncomment when deploying with live site key -->
   <!-- <script src="https://www.google.com/recaptcha/api.js" async defer></script> -->
   <style>
@@ -127,9 +127,11 @@
     <span style="font-size:12px;color:var(--txt-m);line-height:1.5;">You have read and agreed to the <a href="customer-terms.html" style="color:var(--mg);">Terms & Conditions, Pricing & FAQs</a>. <a href="customer-terms.html" style="color:var(--txt-d);font-size:11px;">Read again →</a></span>
   </div>
 
-  <!-- reCAPTCHA v2 widget -->
-  <div style="margin-bottom:16px;" id="captchaWrap">
-    <div class="g-recaptcha" data-sitekey="6LfyeaEsAAAAABP6lwsV5v5cTn5zrHuU1enffCII"></div>
+  <!-- reCAPTCHA v3 runs invisibly — no widget needed -->
+  <div style="font-size:10px;color:var(--txt-d);margin-bottom:16px;">
+    This site is protected by reCAPTCHA and the Google
+    <a href="https://policies.google.com/privacy" style="color:var(--txt-d);">Privacy Policy</a> and
+    <a href="https://policies.google.com/terms" style="color:var(--txt-d);">Terms of Service</a> apply.
   </div>
 
   <button class="btn btn-mg" style="width:100%;padding:13px;font-size:12px;justify-content:center;" id="regBtn" onclick="doRegister()">
@@ -157,12 +159,12 @@
       setTimeout(() => window.location.href = 'customer-terms.html', 1800); return;
     }
 
-    // Check reCAPTCHA
-    const captchaToken = grecaptcha.getResponse();
-    if (!captchaToken) {
-      err.textContent = 'Please complete the "I\'m not a robot" check.';
-      err.classList.add('show');
-      return;
+    // Get reCAPTCHA v3 token invisibly
+    let captchaToken = '';
+    try {
+      captchaToken = await grecaptcha.execute('6LfyeaEsAAAAABP6lwsV5v5cTn5zrHuU1enffCII', { action: 'register' });
+    } catch(e) {
+      console.warn('reCAPTCHA execute failed:', e);
     }
 
     const btn = document.getElementById('regBtn'); btn.disabled = true;
@@ -193,7 +195,6 @@
       } else {
         err.textContent = data.error || 'Registration failed. Please try again.';
         err.classList.add('show');
-        grecaptcha.reset();
         btn.disabled = false;
         document.getElementById('sp').style.display = 'none';
         document.getElementById('bt').textContent = 'Create Account';
@@ -201,7 +202,6 @@
     } catch(e) {
       err.textContent = 'Could not connect to server. Please try again.';
       err.classList.add('show');
-      grecaptcha.reset();
       btn.disabled = false;
       document.getElementById('sp').style.display = 'none';
       document.getElementById('bt').textContent = 'Create Account';
