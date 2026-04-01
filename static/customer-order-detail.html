@@ -47,18 +47,7 @@
   ============================================================
 -->
 <script src="core.js"></script>
-<nav class="nav">
-  <div class="nav-logo"><img src="logo.png" alt="Cope Aesthetic Customs"/></div>
-  <div class="nav-links">
-    <a href="customer-portal.html" class="nav-a active">My Orders</a>
-    <a href="customer-order-form.html" class="nav-a">New Order</a>
-    <a href="customer-track.html" class="nav-a">Track</a>
-    <a href="customer-settings.html" class="nav-a">Settings</a>
-  </div>
-  <div class="nav-right">
-    <div class="nav-avatar" id="navAv">J</div>
-  </div>
-</nav>
+<script src="navbar.js"></script>
 
 <div class="page page-sm">
   <a href="customer-portal.html" class="back">← Back to My Orders</a>
@@ -86,8 +75,7 @@
 
   requireCustomerAuth();
   const user = JSON.parse(localStorage.getItem('customer_user')||'{}');
-  const fn = (user.name||'C').split(' ')[0];
-  document.getElementById('navAv').textContent = (fn[0]||'C').toUpperCase();
+  renderCustomerNav('customer-portal.html');
 
   const OID = parseInt(params.get('id'));
   if (!OID) { window.location.href = 'customer-portal.html'; }
