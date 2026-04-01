@@ -37,16 +37,7 @@
   ============================================================
 -->
 <script src="core.js"></script>
-<nav class="nav">
-  <div class="nav-logo"><img src="logo.png" alt="Cope Aesthetic Customs"/></div>
-  <div class="nav-links">
-    <a href="customer-portal.html" class="nav-a">My Orders</a>
-    <a href="customer-order-form.html" class="nav-a">New Order</a>
-    <a href="customer-track.html" class="nav-a">Track</a>
-    <a href="customer-settings.html" class="nav-a active">Settings</a>
-  </div>
-  <div class="nav-right"><div class="nav-avatar" id="navAv">J</div></div>
-</nav>
+<script src="navbar.js"></script>
 
 <div class="page page-sm">
   <div class="page-head"><div><div class="page-title">Account <span>Settings</span></div><div class="page-sub">Manage your profile and preferences</div></div></div>
@@ -129,6 +120,7 @@
 <script>
   requireCustomerAuth();
   const user=JSON.parse(localStorage.getItem('customer_user')||'{}');
+  renderCustomerNav('customer-settings.html');
   const parts=(user.name||'').split(' ');
   document.getElementById('fn').value=parts[0]||'';
   document.getElementById('ln').value=parts.slice(1).join(' ')||'';
@@ -136,8 +128,6 @@
   if(user.phone) document.getElementById('phone').value=user.phone;
   if(user.notify_sms) document.getElementById('notifSms').checked=user.notify_sms;
   if(user.customer_type) document.getElementById('customerType').value=user.customer_type;
-  const fn=parts[0]||'J';
-  document.getElementById('navAv').textContent=fn[0].toUpperCase();
 
   async function saveProfile(){
     const name          = document.getElementById('fn').value.trim() + ' ' + document.getElementById('ln').value.trim();
