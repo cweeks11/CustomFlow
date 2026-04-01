@@ -970,8 +970,7 @@
     if (!res || !res.ok) { showToast('Failed to update status', 'error'); return; }
     ORDER.status = val;
     statusHist.push({ id:Date.now(), order_id:OID, from_status:oldStatus, to_status:val, changed_at:new Date().toISOString(), note:'Updated by admin' });
-    render();
-    renderInvoices();
+    renderAll();
     showToast('Status → ' + (STATUSES[val]?.label||val));
   }
 
@@ -989,8 +988,22 @@
     if (!res || !res.ok) { showToast('Failed to update rush status', 'error'); return; }
     ORDER.rush_approved=approved;
     if(!approved) ORDER.is_rush=false;
-    render();
+    renderAll();
     showToast(approved?'⚡ Rush approved!':'Rush denied.');
+  }
+
+  // renderAll() — call after any render() that changes page structure
+  // to repopulate all image galleries (render() wipes innerHTML)
+  function renderAll() {
+    render();
+    try { renderDocuments(); } catch(e) {}
+    renderGallery('refGal',       custPhotos,    false, 'reference');
+    renderGallery('baseGal',      basePhoots,    false, 'base_photo');
+    renderGallery('moodboardGal', moodboardImgs, true,  'moodboard');
+    renderGallery('conceptGal',   conceptImgs,   true,  'concept_art');
+    renderGallery('mockupGal',    mockupImgs,    true,  'mockup');
+    setupDropZone('mockupDrop','mockupFile', imgs => { mockupImgs.push(...imgs); renderGallery('mockupGal',mockupImgs,true,'mockup'); });
+    setupDropZone('baseDrop','baseFile', imgs => { basePhoots.push(...imgs); renderGallery('baseGal',basePhoots,false,'base'); });
   }
 
   async function toggleRevisionComplete(revId, completed) {
@@ -1001,7 +1014,7 @@
     if (res && res.ok) {
       const idx = revisions.findIndex(r => r.id === revId);
       if (idx >= 0) revisions[idx].completed = completed;
-      render();
+      renderAll();
       showToast(completed ? '✔ Revision marked complete!' : 'Revision reopened.');
     } else {
       showToast('Failed to update revision.', 'error');
@@ -1013,7 +1026,7 @@
     const res = await apiFetch('/api/revisions/' + revId, { method: 'DELETE' });
     if (res && res.ok) {
       revisions = revisions.filter(r => r.id !== revId);
-      render();
+      renderAll();
       showToast('Revision deleted.');
     } else {
       showToast('Failed to delete revision.', 'error');
