@@ -67,31 +67,38 @@
 <script>
 
   requireCustomerAuth();
-  const user=JSON.parse(localStorage.getItem('customer_user')||'{}');
-  const fn=(user.name||'').split(' ')[0];
-  document.getElementById('navAv').textContent=fn[0]?.toUpperCase()||'J';
+  const user = JSON.parse(localStorage.getItem('customer_user')||'{}');
+  const fn = (user.name||'').split(' ')[0];
+  document.getElementById('navAv').textContent = fn[0]?.toUpperCase() || 'J';
 
   let myOrders = [];
-  if (user && user.id) {
-  function doSearch(){
-    const q=document.getElementById('searchIn').value.trim().replace('#','');
-    if(!q){showToast('Enter an order number or tracking number.','warning');return;}
-    const byId=myOrders.find(o=>o.id==parseInt(q));
-    if(byId){showOrder(byId.id);return;}
-    // Search tracking
-    const byTrk=myOrders.find(o=>o.inbound_tracking===q||o.outbound_tracking===q);
-    if(byTrk){showOrder(byTrk.id);return;}
-    document.getElementById('result').innerHTML=`<div class="empty"><div class="empty-icon">🔍</div><div class="empty-txt">No order found for "${q}"</div></div>`;
+
+  const pip = ['free_waitlist','paid_waitlist','production_queue','prep','painting','completed','shipped','closed'];
+
+  function doSearch() {
+    const q = document.getElementById('searchIn').value.trim().replace('#','');
+    if (!q) { showToast('Enter an order number or tracking number.','warning'); return; }
+    const byId  = myOrders.find(o => String(o.id) === q);
+    const byTrk = myOrders.find(o => o.inbound_tracking === q || o.outbound_tracking === q);
+    const found = byId || byTrk;
+    if (found) {
+      showOrder(found.id);
+    } else {
+      document.getElementById('result').innerHTML =
+        `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-txt">No order found for "#${q}"</div></div>`;
+    }
   }
-  async function showOrder(id){
-    const o=myOrders.find(x=>x.id===id); if(!o) return;
-    const pip=['free_waitlist','paid_waitlist','production_queue','prep','painting','completed','shipped','closed'];
-    const pidx=pip.indexOf(o.status);
-    // Load history from API
+
+  async function showOrder(id) {
+    const o = myOrders.find(x => x.id === id);
+    if (!o) return;
+    const pidx = pip.indexOf(o.status);
+
+    // Load full detail (status history, tracking) from API
     const detailRes = await apiFetch('/api/orders/' + id);
     const hist = detailRes && detailRes.ok ? (detailRes.data.status_history || []) : [];
 
-    document.getElementById('result').innerHTML=`
+    document.getElementById('result').innerHTML = `
       <div class="card" style="margin-bottom:18px;">
         <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
           <div>
@@ -100,7 +107,6 @@
           </div>
           ${statusBadge(o.status)}
         </div>
-        <!-- PIPELINE -->
         <div class="pipeline">
           <div class="pip-track">
             ${pip.map((s,i)=>`
@@ -112,7 +118,6 @@
         </div>
       </div>
 
-      <!-- TRACKING NUMBERS -->
       <div class="g2" style="margin-bottom:18px;">
         <div class="card">
           <div class="card-title" style="margin-bottom:12px;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Inbound — Your Item to Buffy</div>
@@ -125,7 +130,6 @@
         </div>
       </div>
 
-      <!-- TIMELINE -->
       <div class="card">
         <div class="card-title" style="margin-bottom:12px;"><span class="card-dot"></span>Order Timeline</div>
         ${hist.length ? hist.map(h=>`
@@ -144,23 +148,23 @@
       </div>`;
   }
 
-(async()=>{
-
+  async function loadPage() {
     const ordersRes = await apiFetch('/api/orders');
     if (ordersRes && ordersRes.ok) myOrders = ordersRes.data || [];
+
+    // Quick-link buttons for each order
+    document.getElementById('quickLinks').innerHTML = myOrders.map(o =>
+      `<button class="btn btn-ghost btn-sm" onclick="showOrder(${o.id})">#${o.id}</button>`
+    ).join('');
+
+    // Auto-load order from URL param, or show the most recent one
+    const p = new URLSearchParams(location.search);
+    if (p.get('id'))        showOrder(parseInt(p.get('id')));
+    else if (myOrders.length) showOrder(myOrders[0].id);
   }
-  document.getElementById('quickLinks').innerHTML=myOrders.map(o=>`
-    <button class="btn btn-ghost btn-sm" onclick="showOrder(${o.id})">#${o.id}</button>`).join('');
 
+  loadPage();
 
-
-  // Auto-load if URL has id
-  const p=new URLSearchParams(location.search);
-  if(p.get('id')) showOrder(parseInt(p.get('id')));
-  else if(myOrders.length) showOrder(myOrders[0].id);
-
-
-})();
 </script>
 </body>
 </html>
