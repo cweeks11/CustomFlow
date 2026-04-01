@@ -129,6 +129,8 @@
     moodboardImgs= (detail.order_images||[]).filter(i=>i.type==='moodboard');
     conceptImgs  = (detail.order_images||[]).filter(i=>i.type==='concept_art');
     latestMockup = mockups.length ? mockups[mockups.length-1] : null;
+    // Populate myRefPhotos from saved reference images
+    myRefPhotos  = refImgs.filter(i=>i.url).map(i=>i.url);
     render();
     renderCustInvoices();
   }
@@ -369,13 +371,36 @@
   function addRefPhotos(e) {
     Array.from(e.target.files).forEach(f=>{
       const r=new FileReader();
-      r.onload=ev=>{ myRefPhotos.push(ev.target.result); renderGal('refGal',myRefPhotos,true); showToast('Reference photo added!'); };
+      r.onload=async ev=>{
+        const url = ev.target.result;
+        // Save to API
+        const res = await apiFetch('/api/orders/' + OID + '/images', {
+          method: 'POST',
+          body: JSON.stringify({ url, type: 'reference' })
+        });
+        if (res && res.ok) {
+          myRefPhotos.push(url);
+          renderGal('refGal', myRefPhotos, true);
+          showToast('Reference photo saved!');
+        } else {
+          showToast('Failed to save photo — please try again.', 'error');
+        }
+      };
       r.readAsDataURL(f);
     });
     e.target.value='';
   }
 
-  function delRef(i) { myRefPhotos.splice(i,1); renderGal('refGal',myRefPhotos,true); }
+  async function delRef(i) {
+    // Find the matching image id from refImgs
+    const img = refImgs[i];
+    if (img && img.id) {
+      await apiFetch('/api/orders/' + OID + '/images/' + img.id, { method: 'DELETE' });
+      refImgs.splice(i, 1);
+    }
+    myRefPhotos.splice(i, 1);
+    renderGal('refGal', myRefPhotos, true);
+  }
 
   function saveInbound() {
     const v=document.getElementById('inboundTrk').value.trim();
