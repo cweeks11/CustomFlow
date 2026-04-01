@@ -179,6 +179,8 @@ class Revision(db.Model):
     notes           = db.Column(db.Text)
     created_at      = db.Column(db.DateTime, default=datetime.datetime.utcnow)
     charge_amount   = db.Column(db.Numeric(8, 2), default=0)
+    # SQL: ALTER TABLE revisions ADD COLUMN IF NOT EXISTS completed BOOLEAN DEFAULT FALSE;
+    completed       = db.Column(db.Boolean, default=False)
 
     def to_dict(self):
         return {
@@ -189,6 +191,7 @@ class Revision(db.Model):
             'notes':           self.notes,
             'created_at':      self.created_at.isoformat() if self.created_at else None,
             'charge_amount':   float(self.charge_amount) if self.charge_amount else 0,
+            'completed':       self.completed or False,
         }
 
 
@@ -868,9 +871,35 @@ def create_revision():
     return jsonify({'revision': revision.to_dict()}), 201
 
 
-# ============================================================
-# API: ADD-ONS
-# ============================================================
+@app.route('/api/revisions/<int:revision_id>', methods=['PATCH'])
+@require_admin
+def update_revision(revision_id):
+    """
+    PATCH /api/revisions/<id>
+    Body: { completed: true/false }
+    Buffy marks a revision as completed (addressed).
+    Called by: admin-order-detail.html revision list
+    """
+    revision = Revision.query.get_or_404(revision_id)
+    data = request.get_json() or {}
+    if 'completed' in data:
+        revision.completed = data['completed']
+    db.session.commit()
+    return jsonify({'revision': revision.to_dict()})
+
+
+@app.route('/api/revisions/<int:revision_id>', methods=['DELETE'])
+@require_admin
+def delete_revision(revision_id):
+    """
+    DELETE /api/revisions/<id>
+    Buffy deletes a revision request.
+    Called by: admin-order-detail.html revision list
+    """
+    revision = Revision.query.get_or_404(revision_id)
+    db.session.delete(revision)
+    db.session.commit()
+    return jsonify({'deleted': revision_id})
 
 @app.route('/api/orders/<int:order_id>/images', methods=['POST'])
 @require_auth
