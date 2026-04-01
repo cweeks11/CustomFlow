@@ -93,6 +93,10 @@ body {
 ::-webkit-scrollbar-thumb { background: var(--b2); border-radius:3px; }
 ::-webkit-scrollbar-thumb:hover { background: var(--mg); }
 
+/* Prevent browser default blue/purple link colors from showing through */
+a { color: inherit; }
+a:visited { color: inherit; }
+
 /* ---- NAVBAR ---- */
 /* ---- 5. NAVIGATION BAR
    Fixed to top of screen on all pages.
