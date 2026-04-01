@@ -111,7 +111,7 @@
   let myRefPhotos  = [];
 
   async function loadPage() {
-    const detailResult = await apiFetch('/api/orders/' + OID);
+    const detailResult = await customerApiFetch('/api/orders/' + OID);
     if (!detailResult || !detailResult.ok) {
       window.location.href = 'customer-portal.html';
       return;
@@ -374,7 +374,7 @@
       r.onload=async ev=>{
         const url = ev.target.result;
         // Save to API
-        const res = await apiFetch('/api/orders/' + OID + '/images', {
+        const res = await customerApiFetch('/api/orders/' + OID + '/images', {
           method: 'POST',
           body: JSON.stringify({ url, type: 'reference' })
         });
@@ -395,7 +395,7 @@
     // Find the matching image id from refImgs
     const img = refImgs[i];
     if (img && img.id) {
-      await apiFetch('/api/orders/' + OID + '/images/' + img.id, { method: 'DELETE' });
+      await customerApiFetch('/api/orders/' + OID + '/images/' + img.id, { method: 'DELETE' });
       refImgs.splice(i, 1);
     }
     myRefPhotos.splice(i, 1);
