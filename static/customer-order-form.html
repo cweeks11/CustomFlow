@@ -396,6 +396,16 @@
       const orderId = result.data.order.id;
       document.getElementById('newOrderId').textContent = 'Your Order #' + orderId + ' has been submitted.';
 
+      // Save reference/inspiration photos
+      if (inspPhotos.length) {
+        for (const url of inspPhotos) {
+          await apiFetch('/api/orders/' + orderId + '/images', {
+            method: 'POST',
+            body: JSON.stringify({ url, type: 'reference' })
+          });
+        }
+      }
+
       // If AI Photography add-on selected, add it to the order
       if (wantsPhoto) {
         await apiFetch('/api/add_ons', {
