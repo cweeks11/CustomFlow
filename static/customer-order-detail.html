@@ -71,14 +71,12 @@
 
 <script>
 
-  // Support admin "Customer View" preview — if preview_token is in URL, use it instead of stored token
+  // Support admin "Customer View" preview
   const params = new URLSearchParams(location.search);
   const _previewToken = params.get('preview_token');
   if (_previewToken) {
-    // Store temporarily for this page's apiFetch calls
     window._adminPreviewMode = true;
     localStorage.setItem('customer_token', _previewToken);
-    // Show admin preview banner
     const banner = document.createElement('div');
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#2c3e50;color:#f39c12;text-align:center;padding:8px 16px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;';
     banner.innerHTML = '👁 Admin Preview Mode — Viewing as Customer &nbsp;·&nbsp; <a href="javascript:window.close()" style="color:#e74c3c;text-decoration:underline;">Close Tab</a>';
@@ -94,34 +92,49 @@
   const OID = parseInt(params.get('id'));
   if (!OID) { window.location.href = 'customer-portal.html'; }
 
-  // Load full order detail from real API
-(async()=>{
-  const detailResult = await apiFetch('/api/orders/' + OID);
-  if (!detailResult || !detailResult.ok) {
-    window.location.href = 'customer-portal.html';
-    throw new Error('Order not found');
-  }
-  const detail = detailResult.data;
-
-  let ORDER      = detail.order;
-  const payments   = detail.payments || [];
-  const mockups    = detail.mockups || [];
-  const revisions  = detail.revisions || [];
-  const statusHist = detail.status_history || [];
-  const consults   = detail.consult_calls || [];
-  const addons     = detail.add_ons || [];
-  const refImgs       = (detail.order_images||[]).filter(i=>i.type==='reference');
-  const mockImgs      = (detail.order_images||[]).filter(i=>i.type==='mockup');
-  const moodboardImgs = (detail.order_images||[]).filter(i=>i.type==='moodboard');
-  const conceptImgs   = (detail.order_images||[]).filter(i=>i.type==='concept_art');
-  // Get the latest mockup object for approval status
-  const latestMockup  = mockups.length ? mockups[mockups.length - 1] : null;
-
   const pip = ['free_waitlist','paid_waitlist','production_queue','prep','painting','completed','shipped','closed'];
 
-  let myRefPhotos = [];
+  // ---- Module-level state (populated by loadPage) ----
+  let ORDER        = {};
+  let detail       = {};
+  let payments     = [];
+  let mockups      = [];
+  let revisions    = [];
+  let statusHist   = [];
+  let consults     = [];
+  let addons       = [];
+  let refImgs      = [];
+  let mockImgs     = [];
+  let moodboardImgs= [];
+  let conceptImgs  = [];
+  let latestMockup = null;
+  let myRefPhotos  = [];
 
-})();
+  async function loadPage() {
+    const detailResult = await apiFetch('/api/orders/' + OID);
+    if (!detailResult || !detailResult.ok) {
+      window.location.href = 'customer-portal.html';
+      return;
+    }
+    detail       = detailResult.data;
+    ORDER        = detail.order        || {};
+    payments     = detail.payments     || [];
+    mockups      = detail.mockups      || [];
+    revisions    = detail.revisions    || [];
+    statusHist   = detail.status_history || [];
+    consults     = detail.consult_calls || [];
+    addons       = detail.add_ons      || [];
+    refImgs      = (detail.order_images||[]).filter(i=>i.type==='reference');
+    mockImgs     = (detail.order_images||[]).filter(i=>i.type==='mockup');
+    moodboardImgs= (detail.order_images||[]).filter(i=>i.type==='moodboard');
+    conceptImgs  = (detail.order_images||[]).filter(i=>i.type==='concept_art');
+    latestMockup = mockups.length ? mockups[mockups.length-1] : null;
+    render();
+    renderCustInvoices();
+  }
+
+  loadPage();
+
   function render() {
     const pidx = pip.indexOf(ORDER.status);
     const freeRevs = 3;
@@ -166,7 +179,7 @@
       <div style="padding:16px 20px;background:rgba(133,132,136,0.06);border:1px solid rgba(133,132,136,0.2);border-radius:8px;margin-bottom:18px;">
         <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--chr);margin-bottom:6px;">📋 You're on the Free Waitlist</div>
         <div style="font-size:13px;color:var(--txt-m);margin-bottom:12px;">Buffy will reach out with a quote. Pay the $50 booking fee to lock your spot and move to the Paid Waitlist.</div>
-        <div style="font-size:11px;color:var(--txt-d);">Current production start: <strong style="color:var(--gld);">${getBookingStatus().prod_start}</strong></div>
+        <div style="font-size:11px;color:var(--txt-d);">Current production start: <strong style="color:var(--gld);">Check with Buffy for availability</strong></div>
       </div>` : ''}
       ${ORDER.status==='paid_waitlist'?`
       <div style="padding:16px 20px;background:rgba(216,188,132,0.06);border:1px solid rgba(216,188,132,0.2);border-radius:8px;margin-bottom:18px;">
@@ -515,9 +528,6 @@
   function openLb(src){document.getElementById('lbImg').src=src;document.getElementById('lb').classList.add('open');}
   function closeLb(){document.getElementById('lb').classList.remove('open');}
   document.addEventListener('keydown',e=>{if(e.key==='Escape')closeLb();});
-
-  render();
-
 
 </script>
 </body>
