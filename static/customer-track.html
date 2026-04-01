@@ -95,7 +95,7 @@
     const pidx = pip.indexOf(o.status);
 
     // Load full detail (status history, tracking) from API
-    const detailRes = await apiFetch('/api/orders/' + id);
+    const detailRes = await customerApiFetch('/api/orders/' + id);
     const hist = detailRes && detailRes.ok ? (detailRes.data.status_history || []) : [];
 
     document.getElementById('result').innerHTML = `
@@ -149,7 +149,7 @@
   }
 
   async function loadPage() {
-    const ordersRes = await apiFetch('/api/orders');
+    const ordersRes = await customerApiFetch('/api/orders');
     if (ordersRes && ordersRes.ok) myOrders = ordersRes.data || [];
 
     // Quick-link buttons for each order
