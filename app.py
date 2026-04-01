@@ -853,25 +853,32 @@ def create_revision():
 # ============================================================
 
 @app.route('/api/orders/<int:order_id>/images', methods=['POST'])
-@require_admin
+@require_auth
 def upload_order_image(order_id):
     """
     POST /api/orders/<id>/images
     Body: { url, type }
     type: 'moodboard' | 'concept_art' | 'mockup' | 'reference' | 'base_photo'
-    Buffy uploads images for each stage of the design process.
-    In production the url will be a Cloudinary/S3 link.
-    For now accepts a base64 data URL or any URL string.
-    Called by: admin-order-detail.html upload sections
+    Admins can upload any type. Customers can only upload 'reference' to their own orders.
+    Called by: admin-order-detail.html, customer-order-detail.html, customer-order-form.html
     """
     data = request.get_json()
     if not data or not data.get('url') or not data.get('type'):
         return jsonify({'error': 'url and type required'}), 400
 
+    order = Order.query.get_or_404(order_id)
+
+    # Customers can only add reference photos to their own orders
+    if request.user_role == 'customer':
+        if order.user_id != request.user_id:
+            return jsonify({'error': 'Not authorized'}), 403
+        if data['type'] not in ('reference',):
+            return jsonify({'error': 'Customers can only upload reference photos'}), 403
+
     image = OrderImage(
-        order_id    = order_id,
-        url         = data['url'],
-        type        = data['type'],
+        order_id = order_id,
+        url      = data['url'],
+        type     = data['type'],
     )
     db.session.add(image)
 
