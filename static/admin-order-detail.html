@@ -95,10 +95,28 @@
   let custPhotos=[], basePhoots=[], mockupImgs=[], moodboardImgs=[], conceptImgs=[];
   let mockups=[], revisions=[], payments=[], addons=[], statusHist=[], consults=[];
 
+  // Global error catcher — shows real error on page instead of silent spinner
+  window.onerror = function(msg, src, line, col, err) {
+    document.getElementById('heroWrap').innerHTML =
+      `<div style="padding:30px;background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.3);border-radius:8px;margin-bottom:16px;">
+        <div style="font-weight:700;color:var(--err);margin-bottom:8px;">⚠ Page Error — please report this to your developer</div>
+        <div style="font-family:monospace;font-size:12px;color:var(--txt-m);white-space:pre-wrap;">${msg}\nLine ${line}:${col}\n${src}</div>
+        <a href="admin-orders.html" class="btn btn-out btn-sm" style="margin-top:12px;display:inline-flex;">← Back to Orders</a>
+      </div>`;
+    return false;
+  };
+
   // Load all order data from the real API
   async function loadOrderDetail() {
     if (!OID) { window.location.href = 'admin-orders.html'; return; }
-    const result = await apiFetch('/api/orders/' + OID);
+    let result;
+    try {
+      result = await apiFetch('/api/orders/' + OID);
+    } catch(e) {
+      document.getElementById('heroWrap').innerHTML =
+        `<div style="padding:60px;text-align:center;color:var(--err);">⚠ Network error: ${e.message}<br/><a href="admin-orders.html" class="btn btn-out btn-sm" style="margin-top:16px;display:inline-flex;">← Back</a></div>`;
+      return;
+    }
     if (!result || !result.ok) {
       document.getElementById('heroWrap').innerHTML =
         `<div style="padding:60px;text-align:center;color:var(--err);">
@@ -109,7 +127,7 @@
       return;
     }
     const d = result.data;
-    detail     = d;  // make available module-wide for renderDocuments()
+    detail     = d;
     ORDER      = d.order || {};
     CUSTOMER   = d.customer || {};
     USERS[CUSTOMER.id] = CUSTOMER;
@@ -124,13 +142,24 @@
     addons     = d.add_ons || [];
     statusHist = d.status_history || [];
     consults   = d.consult_calls || [];
-    render();
-    renderDocuments();
-    renderGallery('refGal',       custPhotos,    false, 'reference');
-    renderGallery('baseGal',      basePhoots,    false, 'base_photo');
-    renderGallery('moodboardGal', moodboardImgs, true,  'moodboard');
-    renderGallery('conceptGal',   conceptImgs,   true,  'concept_art');
-    renderGallery('mockupGal',    mockupImgs,    true,  'mockup');
+
+    try {
+      render();
+    } catch(e) {
+      document.getElementById('heroWrap').innerHTML =
+        `<div style="padding:30px;background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.3);border-radius:8px;">
+          <div style="font-weight:700;color:var(--err);margin-bottom:8px;">⚠ render() crashed — please report this</div>
+          <div style="font-family:monospace;font-size:12px;color:var(--txt-m);white-space:pre-wrap;">${e.message}\n${e.stack||''}</div>
+          <a href="admin-orders.html" class="btn btn-out btn-sm" style="margin-top:12px;display:inline-flex;">← Back to Orders</a>
+        </div>`;
+      return;
+    }
+    try { renderDocuments(); } catch(e) { console.error('renderDocuments:', e.message, e.stack); }
+    try { renderGallery('refGal',       custPhotos,    false, 'reference');  } catch(e) { console.error('refGal:', e); }
+    try { renderGallery('baseGal',      basePhoots,    false, 'base_photo'); } catch(e) { console.error('baseGal:', e); }
+    try { renderGallery('moodboardGal', moodboardImgs, true,  'moodboard');  } catch(e) { console.error('moodboardGal:', e); }
+    try { renderGallery('conceptGal',   conceptImgs,   true,  'concept_art');} catch(e) { console.error('conceptGal:', e); }
+    try { renderGallery('mockupGal',    mockupImgs,    true,  'mockup');     } catch(e) { console.error('mockupGal:', e); }
   }
   loadOrderDetail().then(() => setupDropZonesAfterLoad());
 
@@ -861,8 +890,6 @@
     'mockup':     { arr: () => mockupImgs,    setter: (v) => mockupImgs = v,     galId: 'mockupGal'    },
     'base_photo': { arr: () => basePhoots,    setter: (v) => basePhoots = v,     galId: 'baseGal'      },
   };
-  let moodboardImgs = [];
-  let conceptImgs   = [];
 
   function handleUpload(e, type) {
     Array.from(e.target.files).forEach(f => {
