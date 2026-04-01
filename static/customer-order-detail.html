@@ -402,11 +402,20 @@
     renderGal('refGal', myRefPhotos, true);
   }
 
-  function saveInbound() {
-    const v=document.getElementById('inboundTrk').value.trim();
-    if(!v){showToast('Enter a tracking number.','warning');return;}
-    ORDER.inbound_tracking=v;
-    render(); showToast('Tracking saved! Buffy will see this.');
+  async function saveInbound() {
+    const v = document.getElementById('inboundTrk').value.trim();
+    if (!v) { showToast('Enter a tracking number.', 'warning'); return; }
+    const res = await customerApiFetch('/api/orders/' + OID, {
+      method: 'PATCH',
+      body: JSON.stringify({ inbound_tracking: v })
+    });
+    if (res && res.ok) {
+      ORDER.inbound_tracking = v;
+      render();
+      showToast('Tracking saved! Buffy will see this.');
+    } else {
+      showToast('Failed to save tracking number.', 'error');
+    }
   }
 
   function openRevModal() {
@@ -423,12 +432,49 @@
     document.body.appendChild(modal);
   }
 
-  function submitRevision() {
-    const notes=document.getElementById('revNotes').value.trim();
-    if(!notes){showToast('Please describe the changes.','warning');return;}
-    revisions.push({id:Date.now(),order_id:OID,revision_number:revisions.length+1,notes,created_at:new Date().toISOString(),charge_amount:revisions.length>=3?20:0});
-    document.getElementById('revModal').remove();
-    render(); showToast('Revision request sent to Buffy!');
+  async function submitRevision() {
+    const notes = document.getElementById('revNotes').value.trim();
+    if (!notes) { showToast('Please describe the changes.', 'warning'); return; }
+    const res = await customerApiFetch('/api/revisions', {
+      method: 'POST',
+      body: JSON.stringify({ order_id: OID, notes })
+    });
+    if (res && res.ok) {
+      revisions.push(res.data.revision || {
+        id: Date.now(), order_id: OID,
+        revision_number: revisions.length + 1,
+        notes, created_at: new Date().toISOString(),
+        charge_amount: revisions.length >= 3 ? 20 : 0
+      });
+      document.getElementById('revModal').remove();
+      render();
+      showToast('Revision request sent to Buffy!');
+    } else {
+      showToast('Failed to submit revision — please try again.', 'error');
+    }
+  }
+
+  async function approveMockup(mockupId, approved) {
+    const notes = approved ? '' : (prompt('Describe the changes you want:') || '');
+    if (!approved && !notes) return; // cancelled
+    const res = await customerApiFetch('/api/mockups/' + mockupId + '/approve', {
+      method: 'POST',
+      body: JSON.stringify({ approved, notes })
+    });
+    if (res && res.ok) {
+      // Reload full order to get updated mockup state
+      const refreshed = await customerApiFetch('/api/orders/' + OID);
+      if (refreshed && refreshed.ok) {
+        mockups      = refreshed.data.mockups || [];
+        latestMockup = mockups.length ? mockups[mockups.length - 1] : null;
+        revisions    = refreshed.data.revisions || [];
+      }
+      render();
+      renderCustInvoices();
+      showToast(approved ? '✅ Mockup approved! Buffy will start painting.' : '📝 Changes requested — Buffy has been notified.');
+    } else {
+      showToast('Failed to submit — please try again.', 'error');
+    }
   }
 
   // renderCustInvoices() — shows all estimates, invoices, and receipts Buffy has sent.
