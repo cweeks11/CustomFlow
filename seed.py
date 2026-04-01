@@ -38,6 +38,7 @@ with app.app_context():
             # revisions table
             "ALTER TABLE revisions ADD COLUMN IF NOT EXISTS charge_amount NUMERIC(8,2) DEFAULT 0;",
             "ALTER TABLE revisions ADD COLUMN IF NOT EXISTS mockup_id INTEGER;",
+            "ALTER TABLE revisions ADD COLUMN IF NOT EXISTS completed BOOLEAN DEFAULT FALSE;",
             # invoices table — create then add new columns
             """CREATE TABLE IF NOT EXISTS invoices (
                 id SERIAL PRIMARY KEY,
