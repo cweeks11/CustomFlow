@@ -67,3 +67,73 @@ function renderAdminNav(active) {
       drop.style.display = 'none';
   });
 }
+
+
+// ============================================================
+// COPE AESTHETIC CUSTOMS — CUSTOMER NAVBAR
+// ============================================================
+// renderCustomerNav() works the same as renderAdminNav() but for
+// customer-facing pages. Pass the current page filename so the
+// correct link gets the active highlight.
+//
+// HOW TO USE:
+//   1. Remove the hardcoded <nav>...</nav> block from the page
+//   2. Add: <script src="navbar.js"></script> after core.js
+//   3. Call renderCustomerNav('customer-portal.html') in your script
+// ============================================================
+
+function renderCustomerNav(active) {
+  const user = JSON.parse(localStorage.getItem('customer_user') || '{}');
+  const name = user.name || '';
+  const init = (name || user.email || 'C')[0].toUpperCase();
+
+  const links = [
+    { href:'customer-portal.html',     label:'My Orders' },
+    { href:'customer-order-form.html', label:'New Order' },
+    { href:'customer-track.html',      label:'Track'     },
+    { href:'customer-settings.html',   label:'Settings'  },
+  ];
+
+  const nav = document.createElement('nav');
+  nav.className = 'nav';
+  nav.innerHTML = `
+    <div class="nav-logo">
+      <img src="logo.png" alt="Cope Aesthetic Customs" />
+    </div>
+    <div class="nav-links">
+      ${links.map(l => `<a href="${l.href}" class="nav-a${active === l.href ? ' active' : ''}">${l.label}</a>`).join('')}
+    </div>
+    <div class="nav-right">
+      <div class="nav-avatar" id="navAv" title="${user.email || ''}">${init}</div>
+    </div>`;
+  document.body.prepend(nav);
+
+  // Dropdown menu
+  const drop = document.createElement('div');
+  drop.id = 'navDrop';
+  drop.style.cssText = 'display:none;position:fixed;top:70px;right:18px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,0.4);z-index:300;min-width:210px;overflow:hidden;font-family:var(--fd);';
+  drop.innerHTML = `
+    <div style="padding:12px 16px;border-bottom:1px solid var(--b1);">
+      <div style="font-size:13px;font-weight:700;color:var(--txt);">${name || 'My Account'}</div>
+      <div style="font-size:11px;color:var(--txt-m);margin-top:2px;">${user.email || ''}</div>
+    </div>
+    <a href="customer-portal.html"     style="display:block;padding:11px 16px;font-size:13px;color:var(--txt);text-decoration:none;">📦 My Orders</a>
+    <a href="customer-order-form.html" style="display:block;padding:11px 16px;font-size:13px;color:var(--txt);text-decoration:none;">✨ New Order</a>
+    <a href="customer-settings.html"   style="display:block;padding:11px 16px;font-size:13px;color:var(--txt);text-decoration:none;">⚙️ Account Settings</a>
+    <button onclick="logoutCustomer()" style="width:100%;text-align:left;padding:11px 16px;font-size:13px;color:var(--err);background:none;border:none;cursor:pointer;font-family:var(--fd);border-top:1px solid var(--b1);">🚪 Log Out</button>`;
+  document.body.appendChild(drop);
+
+  document.getElementById('navAv').onclick = () =>
+    drop.style.display = drop.style.display === 'none' ? 'block' : 'none';
+
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#navAv') && !e.target.closest('#navDrop'))
+      drop.style.display = 'none';
+  });
+}
+
+function logoutCustomer() {
+  localStorage.removeItem('customer_token');
+  localStorage.removeItem('customer_user');
+  window.location.href = 'customer-login.html';
+}
