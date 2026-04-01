@@ -488,6 +488,25 @@ def register():
     if not data or not data.get('email') or not data.get('password') or not data.get('name'):
         return jsonify({'error': 'Name, email, and password required'}), 400
 
+    # Verify reCAPTCHA token
+    captcha_token = data.get('captcha_token', '')
+    secret_key    = os.environ.get('RECAPTCHA_SECRET_KEY', '')
+    if secret_key:  # only enforce if key is configured
+        import urllib.request, urllib.parse
+        verify_url  = 'https://www.google.com/recaptcha/api/siteverify'
+        verify_data = urllib.parse.urlencode({
+            'secret':   secret_key,
+            'response': captcha_token,
+        }).encode()
+        try:
+            with urllib.request.urlopen(verify_url, verify_data, timeout=5) as resp:
+                import json as _json
+                result = _json.loads(resp.read().decode())
+            if not result.get('success'):
+                return jsonify({'error': 'reCAPTCHA verification failed. Please try again.'}), 400
+        except Exception:
+            pass  # if Google is unreachable, allow through so registration still works
+
     # Check if email already exists
     existing = User.query.filter_by(email=data['email'].lower().strip()).first()
     if existing:
