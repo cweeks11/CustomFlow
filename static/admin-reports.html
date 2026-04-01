@@ -116,12 +116,24 @@
     const ordersRes = await apiFetch('/api/orders');
     const orders = (ordersRes && ordersRes.ok) ? ordersRes.data : [];
 
+    // Load pricing tiers so chart labels match what Buffy named them
+    const tierRes = await apiFetch('/api/pricing_tiers/all');
+    const pricingTiers = (tierRes && tierRes.ok) ? tierRes.data : [];
+    // Build a map: lowercase tier key → display name
+    const tierNameMap = {};
+    pricingTiers.forEach(t => {
+      tierNameMap[t.name.toLowerCase()] = t.name;
+    });
+
     // Use real revenue data from API
     const totalRev   = rpt.total_revenue || 0;
     const byType     = rpt.revenue_by_type || {};
+    const tierCounts = rpt.tier_counts || {};
     const totalOrd   = orders.length;
     const rushCount  = orders.filter(o=>o.is_rush).length;
-    const avgRev     = totalOrd ? totalRev / totalOrd : 0;
+    // Avg over orders that have payments (top_customers count)
+    const ordersWithPayments = (rpt.top_customers||[]).reduce((s,tc)=>s+(tc.order_count||0),0) || totalOrd;
+    const avgRev = ordersWithPayments ? totalRev / totalOrd : 0;
 
     // Revenue stats row
     document.getElementById('revStats').innerHTML = `
@@ -153,13 +165,14 @@
       options: { responsive:true, maintainAspectRatio:false, cutout:'60%', plugins:{ legend:{ position:'bottom', labels:{ font:{family:'Barlow Condensed',size:11}, color:'#858488', padding:12 } } } }
     });
 
-    // Orders by pricing tier bar chart
-    const byTier = rpt.tier_counts || {};
+    // Orders by pricing tier — use display names from admin settings
     const tierCtx = document.getElementById('tierChart').getContext('2d');
     if (tierInst) tierInst.destroy();
+    const tierLabels = Object.keys(tierCounts).map(k => tierNameMap[k.toLowerCase()] || k);
+    const tierValues = Object.values(tierCounts);
     tierInst = new Chart(tierCtx, {
       type: 'bar',
-      data: { labels: Object.keys(byTier).map(t=>t.charAt(0).toUpperCase()+t.slice(1)), datasets:[{ data:Object.values(byTier), backgroundColor:'#6B2FBE', borderRadius:5 }] },
+      data: { labels: tierLabels, datasets:[{ data: tierValues, backgroundColor:'#6B2FBE', borderRadius:5 }] },
       options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
         scales:{ y:{beginAtZero:true,ticks:{font:{family:'Barlow Condensed'},color:'#858488'},grid:{color:'#2C2C2C'}}, x:{grid:{display:false},ticks:{font:{family:'Barlow Condensed'},color:'#858488'}} } }
     });
@@ -177,21 +190,18 @@
     // Top customers from API
     const topCusts = rpt.top_customers || [];
     if (topCusts.length) {
-      // Build order/last-order lookup from orders data
-      const custOrders = {}, custLast = {};
+      const custLast = {};
       orders.forEach(o => {
-        custOrders[o.user_id] = (custOrders[o.user_id]||0) + 1;
         if (!custLast[o.user_id] || o.created_at > custLast[o.user_id]) custLast[o.user_id] = o.created_at;
       });
       document.getElementById('topCust').innerHTML = topCusts.map((tc, i) => {
         const u = tc.user || {};
-        const uid = u.id;
         return `<tr>
           <td style="color:var(--txt-m);font-weight:700;">${i+1}</td>
           <td><strong>${u.name||'—'}</strong><br/><span style="font-size:11px;color:var(--txt-m);">${u.email||''}</span></td>
-          <td>${custOrders[uid]||0}</td>
+          <td>${tc.order_count||0}</td>
           <td style="color:var(--gld);font-weight:700;">${formatCurrency(tc.total_paid||0)}</td>
-          <td>${formatDate(custLast[uid])}</td>
+          <td>${formatDate(custLast[u.id])}</td>
         </tr>`;
       }).join('');
     } else {
