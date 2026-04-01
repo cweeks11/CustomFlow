@@ -1266,25 +1266,25 @@ def get_reports():
     """
     from sqlalchemy import func
 
-    # Total revenue from paid payments
+    # Total revenue from paid payments — include all statuses that represent money received
     total_revenue = db.session.query(func.sum(Payment.amount))\
-        .filter_by(status='paid').scalar() or 0
+        .filter(Payment.status.in_(['paid']))\
+        .scalar() or 0
 
     # Revenue by payment type — filter out None keys
     revenue_by_type = {
         k: float(v) for k, v in
         db.session.query(Payment.type, func.sum(Payment.amount))
-        .filter_by(status='paid').group_by(Payment.type).all()
+        .filter(Payment.status.in_(['paid'])).group_by(Payment.type).all()
         if k is not None
     }
 
-    # Orders by pricing tier — filter out None keys
-    tier_counts = {
-        k: v for k, v in
-        db.session.query(Order.pricing_tier, func.count(Order.id))
-        .group_by(Order.pricing_tier).all()
-        if k is not None
-    }
+    # Orders by pricing tier — normalize to lowercase to avoid duplicate bars
+    from sqlalchemy import func as sqlfunc
+    tier_raw = db.session.query(
+        func.lower(Order.pricing_tier), func.count(Order.id)
+    ).filter(Order.pricing_tier.isnot(None)).group_by(func.lower(Order.pricing_tier)).all()
+    tier_counts = {k.capitalize(): v for k, v in tier_raw if k}
 
     # Top customers by total spend
     top_customers_raw = db.session.query(
@@ -1299,10 +1299,12 @@ def get_reports():
     top_customers = []
     for user_id, total in top_customers_raw:
         user = User.query.get(user_id)
+        order_count = Order.query.filter_by(user_id=user_id).count()
         if user:
             top_customers.append({
-                'user': user.to_dict(),
-                'total_paid': float(total or 0),
+                'user':        user.to_dict(),
+                'total_paid':  float(total or 0),
+                'order_count': order_count,
             })
 
     return jsonify({
