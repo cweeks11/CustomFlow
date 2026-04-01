@@ -483,17 +483,12 @@
     const notes = (document.getElementById('changesNote_' + mockupId) || {}).value?.trim();
     if (!notes) { showToast('Please describe the changes you want.', 'warning'); return; }
 
-    // Submit as a mockup revision request
+    // POST to approve endpoint with approved=false — this creates the revision on the backend
     const res = await customerApiFetch('/api/mockups/' + mockupId + '/approve', {
       method: 'POST',
       body: JSON.stringify({ approved: false, notes })
     });
     if (res && res.ok) {
-      // Also save as a revision record so it shows in the revision list
-      const revRes = await customerApiFetch('/api/revisions', {
-        method: 'POST',
-        body: JSON.stringify({ order_id: OID, notes, mockup_id: mockupId })
-      });
       // Reload order to get updated revisions + mockup state
       const refreshed = await customerApiFetch('/api/orders/' + OID);
       if (refreshed && refreshed.ok) {
