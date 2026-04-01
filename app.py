@@ -1270,17 +1270,21 @@ def get_reports():
     total_revenue = db.session.query(func.sum(Payment.amount))\
         .filter_by(status='paid').scalar() or 0
 
-    # Revenue by payment type
-    revenue_by_type = dict(
+    # Revenue by payment type — filter out None keys
+    revenue_by_type = {
+        k: float(v) for k, v in
         db.session.query(Payment.type, func.sum(Payment.amount))
         .filter_by(status='paid').group_by(Payment.type).all()
-    )
+        if k is not None
+    }
 
-    # Orders by pricing tier
-    tier_counts = dict(
+    # Orders by pricing tier — filter out None keys
+    tier_counts = {
+        k: v for k, v in
         db.session.query(Order.pricing_tier, func.count(Order.id))
         .group_by(Order.pricing_tier).all()
-    )
+        if k is not None
+    }
 
     # Top customers by total spend
     top_customers_raw = db.session.query(
