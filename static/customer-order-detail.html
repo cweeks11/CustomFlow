@@ -50,7 +50,7 @@
 <script src="navbar.js"></script>
 
 <div class="page page-sm">
-  <a href="customer-portal.html" class="back">← Back to My Orders</a>
+  <a href="customer-portal.html" class="back preview-hide">← Back to My Orders</a>
   <div id="wrap"><div class="spin"></div></div>
 </div>
 
@@ -66,27 +66,21 @@
   const _isPreview = !!_previewToken;
 
   if (_isPreview) {
-    window._adminPreviewMode = true;
     sessionStorage.setItem('preview_customer_token', _previewToken);
 
-    // Inject CSS that hides all interactive action elements in preview mode
+    // Hide all action buttons — read-only view
     const style = document.createElement('style');
-    style.textContent = `
-      .preview-hide { display: none !important; }
-    `;
+    style.textContent = '.preview-hide { display: none !important; }';
     document.head.appendChild(style);
 
     const banner = document.createElement('div');
-    banner.id = 'previewBanner';
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#2c3e50;color:#f39c12;text-align:center;padding:8px 16px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;';
-    banner.innerHTML = '👁 Admin Preview Mode — Read Only &nbsp;·&nbsp; <a href="javascript:window.close()" style="color:#e74c3c;text-decoration:underline;">Close Tab</a>';
+    banner.innerHTML = '👁 Admin Preview — Read Only &nbsp;·&nbsp; <a href="javascript:window.close()" style="color:#e74c3c;text-decoration:underline;">Close Tab</a>';
     document.body.prepend(banner);
   }
 
-  // In preview mode, skip the normal auth check and use the preview token
-  if (!_isPreview) {
-    requireCustomerAuth();
-  }
+  // In preview mode skip auth check (no customer token in localStorage)
+  if (!_isPreview) requireCustomerAuth();
 
   const user = _isPreview ? {} : JSON.parse(localStorage.getItem('customer_user')||'{}');
   if (!_isPreview) renderCustomerNav('customer-portal.html');
@@ -94,7 +88,8 @@
   const OID = parseInt(params.get('id'));
   if (!OID) { window.location.href = 'customer-portal.html'; }
 
-  // Override customerApiFetch to use preview token when in preview mode
+  // previewAwareFetch — uses sessionStorage preview token instead of localStorage
+  // so Buffy's session is never affected
   async function previewAwareFetch(endpoint, options = {}) {
     if (_isPreview) {
       const token = sessionStorage.getItem('preview_customer_token');
