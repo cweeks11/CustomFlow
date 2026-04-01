@@ -455,14 +455,11 @@
   }
 
   async function approveMockup(mockupId, approved) {
-    const notes = approved ? '' : (prompt('Describe the changes you want:') || '');
-    if (!approved && !notes) return; // cancelled
     const res = await customerApiFetch('/api/mockups/' + mockupId + '/approve', {
       method: 'POST',
-      body: JSON.stringify({ approved, notes })
+      body: JSON.stringify({ approved, notes: '' })
     });
     if (res && res.ok) {
-      // Reload full order to get updated mockup state
       const refreshed = await customerApiFetch('/api/orders/' + OID);
       if (refreshed && refreshed.ok) {
         mockups      = refreshed.data.mockups || [];
@@ -471,9 +468,44 @@
       }
       render();
       renderCustInvoices();
-      showToast(approved ? '✅ Mockup approved! Buffy will start painting.' : '📝 Changes requested — Buffy has been notified.');
+      showToast('✅ Mockup approved! Buffy will start painting.');
     } else {
       showToast('Failed to submit — please try again.', 'error');
+    }
+  }
+
+  function openRequestChanges(mockupId) {
+    const form = document.getElementById('changesForm_' + mockupId);
+    if (form) form.style.display = form.style.display === 'none' ? 'block' : 'none';
+  }
+
+  async function submitChanges(mockupId) {
+    const notes = (document.getElementById('changesNote_' + mockupId) || {}).value?.trim();
+    if (!notes) { showToast('Please describe the changes you want.', 'warning'); return; }
+
+    // Submit as a mockup revision request
+    const res = await customerApiFetch('/api/mockups/' + mockupId + '/approve', {
+      method: 'POST',
+      body: JSON.stringify({ approved: false, notes })
+    });
+    if (res && res.ok) {
+      // Also save as a revision record so it shows in the revision list
+      const revRes = await customerApiFetch('/api/revisions', {
+        method: 'POST',
+        body: JSON.stringify({ order_id: OID, notes, mockup_id: mockupId })
+      });
+      // Reload order to get updated revisions + mockup state
+      const refreshed = await customerApiFetch('/api/orders/' + OID);
+      if (refreshed && refreshed.ok) {
+        mockups   = refreshed.data.mockups   || [];
+        revisions = refreshed.data.revisions || [];
+        latestMockup = mockups.length ? mockups[mockups.length - 1] : null;
+      }
+      render();
+      renderCustInvoices();
+      showToast('📝 Changes requested — Buffy has been notified!');
+    } else {
+      showToast('Failed to submit changes — please try again.', 'error');
     }
   }
 
