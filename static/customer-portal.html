@@ -32,24 +32,9 @@
 -->
 <script src="core.js"></script>
 
-<nav class="nav">
-  <div class="nav-logo"><img src="logo.png" alt="Cope Aesthetic Customs"/></div>
-  <div class="nav-links">
-    <a href="customer-portal.html" class="nav-a active">My Orders</a>
-    <a href="customer-order-form.html" class="nav-a">New Order</a>
-    <a href="customer-track.html" class="nav-a">Track</a>
-    <a href="customer-settings.html" class="nav-a">Settings</a>
-  </div>
-  <div class="nav-right">
-    <div class="nav-avatar" id="navAv" onclick="toggleMenu()">J</div>
-  </div>
-</nav>
+<script src="core.js"></script>
+<script src="navbar.js"></script>
 
-<div id="navMenu" style="display:none;position:fixed;top:70px;right:18px;background:var(--s1);border:1px solid var(--b1);border-radius:10px;box-shadow:0 8px 28px rgba(0,0,0,0.4);z-index:300;min-width:190px;overflow:hidden;font-family:var(--fd);">
-  <div id="menuEmail" style="padding:10px 16px;font-size:11px;color:var(--txt-m);border-bottom:1px solid var(--b1);"></div>
-  <a href="customer-settings.html" style="display:block;padding:11px 16px;font-size:13px;color:var(--txt);text-decoration:none;">⚙️ Settings</a>
-  <button onclick="logout()" style="width:100%;text-align:left;padding:11px 16px;font-size:13px;color:var(--err);background:none;border:none;cursor:pointer;font-family:var(--fd);border-top:1px solid var(--b1);">🚪 Sign Out</button>
-</div>
 
 <div class="page page-sm">
   <!-- WELCOME -->
@@ -110,19 +95,14 @@
   const user = JSON.parse(localStorage.getItem('customer_user')||'{}');
   const fn = (user.name||'').split(' ')[0]||'there';
   document.getElementById('wName').textContent = fn;
-  document.getElementById('navAv').textContent = fn[0].toUpperCase();
-  document.getElementById('menuEmail').textContent = user.email||'';
+  renderCustomerNav('customer-portal.html');
 
   // Load all data using async IIFE
   let myOrders = [];
-  function toggleMenu(){
-    const m=document.getElementById('navMenu');
-    m.style.display=m.style.display==='none'?'block':'none';
-  }
 
 (async () => {
   try {
-    const result = await apiFetch('/api/orders');
+    const result = await customerApiFetch('/api/orders');
     if (result && result.ok) {
       myOrders = Array.isArray(result.data) ? result.data : [];
     }
