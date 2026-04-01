@@ -434,11 +434,22 @@
         <div style="margin-top:16px;border-top:1px solid var(--b1);padding-top:14px;">
           <div class="fl" style="margin-bottom:10px;">Revision History</div>
           ${revisions.map(r=>`
-            <div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px;">
+            <div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px;align-items:flex-start;${r.completed?'opacity:0.5;':''}">
               <div style="width:24px;height:24px;border-radius:50%;background:${r.revision_number<=freeRevs?'rgba(46,204,113,0.1)':'rgba(232,160,32,0.1)'};color:${r.revision_number<=freeRevs?'var(--ok)':'var(--warn)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;flex-shrink:0;">R${r.revision_number}</div>
-              <div style="flex:1;color:var(--txt-m);">${r.notes||'—'}</div>
+              <div style="flex:1;color:var(--txt-m);">
+                ${r.notes||'—'}
+                ${r.completed?`<span style="margin-left:6px;font-size:10px;font-weight:700;color:var(--ok);text-transform:uppercase;letter-spacing:1px;">✔ Done</span>`:''}
+              </div>
               <div style="color:${r.charge_amount?'var(--warn)':'var(--txt-d)'};white-space:nowrap;font-size:11px;">${r.charge_amount?formatCurrency(r.charge_amount)+' fee':'Free'}</div>
               <div style="color:var(--txt-d);font-size:11px;white-space:nowrap;">${formatDate(r.created_at)}</div>
+              <div style="display:flex;gap:4px;flex-shrink:0;">
+                <button class="btn btn-sm" style="background:rgba(46,204,113,0.1);color:var(--ok);border-color:rgba(46,204,113,0.25);font-size:10px;padding:3px 8px;"
+                  onclick="toggleRevisionComplete(${r.id},${!r.completed})" title="${r.completed?'Mark incomplete':'Mark complete'}">
+                  ${r.completed?'↩ Undo':'✔ Done'}
+                </button>
+                <button class="btn btn-sm btn-err" style="font-size:10px;padding:3px 8px;"
+                  onclick="deleteRevision(${r.id})" title="Delete revision">✕</button>
+              </div>
             </div>`).join('')}
         </div>` : ''}
     </div>
@@ -980,6 +991,33 @@
     if(!approved) ORDER.is_rush=false;
     render();
     showToast(approved?'⚡ Rush approved!':'Rush denied.');
+  }
+
+  async function toggleRevisionComplete(revId, completed) {
+    const res = await apiFetch('/api/revisions/' + revId, {
+      method: 'PATCH',
+      body: JSON.stringify({ completed })
+    });
+    if (res && res.ok) {
+      const idx = revisions.findIndex(r => r.id === revId);
+      if (idx >= 0) revisions[idx].completed = completed;
+      render();
+      showToast(completed ? '✔ Revision marked complete!' : 'Revision reopened.');
+    } else {
+      showToast('Failed to update revision.', 'error');
+    }
+  }
+
+  async function deleteRevision(revId) {
+    if (!confirm('Delete this revision request? This cannot be undone.')) return;
+    const res = await apiFetch('/api/revisions/' + revId, { method: 'DELETE' });
+    if (res && res.ok) {
+      revisions = revisions.filter(r => r.id !== revId);
+      render();
+      showToast('Revision deleted.');
+    } else {
+      showToast('Failed to delete revision.', 'error');
+    }
   }
 
   async function saveTracking(dir) {
