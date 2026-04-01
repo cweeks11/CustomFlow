@@ -46,6 +46,7 @@
   <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
   <title>Create Account — Cope Aesthetic Customs</title>
   <link rel="stylesheet" href="styles.css"/>
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
   <!-- reCAPTCHA script — uncomment when deploying with live site key -->
   <!-- <script src="https://www.google.com/recaptcha/api.js" async defer></script> -->
   <style>
@@ -126,19 +127,9 @@
     <span style="font-size:12px;color:var(--txt-m);line-height:1.5;">You have read and agreed to the <a href="customer-terms.html" style="color:var(--mg);">Terms & Conditions, Pricing & FAQs</a>. <a href="customer-terms.html" style="color:var(--txt-d);font-size:11px;">Read again →</a></span>
   </div>
 
-  <!-- reCAPTCHA PLACEHOLDER — swap this block for the real widget on deployment -->
-  <!-- Real site key: 6LdmLpEsAAAAAKr6zVhIVbdm_P2aCgzz19HElUBO -->
-  <!-- Register the production domain at https://www.google.com/recaptcha/admin -->
+  <!-- reCAPTCHA v2 widget -->
   <div style="margin-bottom:16px;" id="captchaWrap">
-    <div style="display:flex;align-items:center;gap:12px;padding:13px 16px;background:var(--s2);border:1px solid var(--b1);border-radius:4px;cursor:pointer;user-select:none;" onclick="toggleCaptcha()" id="captchaBox">
-      <div style="width:22px;height:22px;border:2px solid var(--b2);border-radius:4px;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all 0.2s;" id="captchaCb"></div>
-      <span style="font-size:13px;color:var(--txt-m);">I'm not a robot</span>
-      <div style="margin-left:auto;text-align:center;opacity:0.4;">
-        <div style="font-size:18px;">🔒</div>
-        <div style="font-size:8px;letter-spacing:1px;color:var(--txt-d);">reCAPTCHA</div>
-      </div>
-    </div>
-    <div style="font-size:10px;color:var(--txt-d);margin-top:5px;padding-left:2px;">⚠ Dev placeholder — replace with live reCAPTCHA widget before deploying</div>
+    <div class="g-recaptcha" data-sitekey="6LfyeaEsAAAABP6lwsV5v5cTn5zrHuU1enffCll"></div>
   </div>
 
   <button class="btn btn-mg" style="width:100%;padding:13px;font-size:12px;justify-content:center;" id="regBtn" onclick="doRegister()">
@@ -148,16 +139,6 @@
 </div></div>
 <script src="core.js"></script>
 <script>
-  let captchaChecked = false;
-
-  function toggleCaptcha() {
-    captchaChecked = !captchaChecked;
-    const cb = document.getElementById('captchaCb');
-    cb.style.background  = captchaChecked ? 'var(--mg)' : '';
-    cb.style.borderColor = captchaChecked ? 'var(--mg)' : 'var(--b2)';
-    cb.innerHTML         = captchaChecked ? '<span style="color:#fff;font-size:13px;font-weight:700;">✓</span>' : '';
-  }
-
   async function doRegister() {
     const fn    = document.getElementById('fn').value.trim();
     const ln    = document.getElementById('ln').value.trim();
@@ -175,51 +156,32 @@
       err.classList.add('show');
       setTimeout(() => window.location.href = 'customer-terms.html', 1800); return;
     }
-    if (!captchaChecked) { err.textContent = 'Please check the "I\'m not a robot" box.'; err.classList.add('show'); return; }
+
+    // Check reCAPTCHA
+    const captchaToken = grecaptcha.getResponse();
+    if (!captchaToken) {
+      err.textContent = 'Please complete the "I\'m not a robot" check.';
+      err.classList.add('show');
+      return;
+    }
 
     const btn = document.getElementById('regBtn'); btn.disabled = true;
     document.getElementById('sp').style.display = 'block';
     document.getElementById('bt').textContent   = 'Creating account...';
-    await new Promise(r => setTimeout(r, 900));
 
-    // =====================================================
-    // WELCOME EMAIL — BACKEND TODO
-    // =====================================================
-    // After saving the new user to the database, trigger a
-    // welcome email using the template defined in core.js.
-    //
-    // Flask implementation (SendGrid example):
-    //
-    //   from sendgrid import SendGridAPIClient
-    //   from sendgrid.helpers.mail import Mail
-    //
-    //   def send_welcome_email(to_name, to_email):
-    //       sg = SendGridAPIClient(os.environ['SENDGRID_API_KEY'])
-    //       msg = Mail(
-    //           from_email='CopeAestheticCustoms@gmail.com',
-    //           to_emails=to_email,
-    //           subject='Welcome to Cope Aesthetic Customs 🎨',
-    //           html_content=render_welcome_html(to_name)
-    //       )
-    //       sg.client.mail.send.post(request_body=msg.get())
-    //
-    // The full HTML + text template is in core.js → WELCOME_EMAIL_TEMPLATE
-    // Call send_welcome_email(name, email) at the end of POST /api/register
-    // =====================================================
-
-    // Call real Flask API
     try {
       const res = await fetch('/api/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name:         fn + ' ' + ln,
-          email:        email,
-          password:     pw,
+          name:          fn + ' ' + ln,
+          email:         email,
+          password:      pw,
           phone:         document.getElementById('phone').value.trim(),
           notify_email:  document.getElementById('notifEmail').checked,
           notify_sms:    document.getElementById('notifSms').checked,
           customer_type: document.getElementById('customerType').value,
+          captcha_token: captchaToken,
         })
       });
       const data = await res.json();
@@ -231,16 +193,18 @@
       } else {
         err.textContent = data.error || 'Registration failed. Please try again.';
         err.classList.add('show');
-        btn.disabled=false;
-        document.getElementById('sp').style.display='none';
-        document.getElementById('bt').textContent='Create Account';
+        grecaptcha.reset();
+        btn.disabled = false;
+        document.getElementById('sp').style.display = 'none';
+        document.getElementById('bt').textContent = 'Create Account';
       }
     } catch(e) {
       err.textContent = 'Could not connect to server. Please try again.';
       err.classList.add('show');
-      btn.disabled=false;
-      document.getElementById('sp').style.display='none';
-      document.getElementById('bt').textContent='Create Account';
+      grecaptcha.reset();
+      btn.disabled = false;
+      document.getElementById('sp').style.display = 'none';
+      document.getElementById('bt').textContent = 'Create Account';
     }
   }
 </script>
