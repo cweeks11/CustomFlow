@@ -145,7 +145,7 @@
     const notify_email  = document.getElementById('notifEmail')?.checked ?? true;
     const notify_sms    = document.getElementById('notifSms')?.checked ?? false;
     const customer_type = document.getElementById('customerType')?.value || 'individual';
-    const result = await apiFetch('/api/users/me', {
+    const result = await customerApiFetch('/api/users/me', {
       method: 'PATCH',
       body: JSON.stringify({ name, phone, notify_email, notify_sms, customer_type }),
     });
@@ -163,7 +163,7 @@
   async function saveNotifs(){
     const notify_email = document.getElementById('notifEmail')?.checked ?? true;
     const notify_sms = document.getElementById('notifSms')?.checked ?? false;
-    await apiFetch('/api/users/me', {
+    await customerApiFetch('/api/users/me', {
       method: 'PATCH',
       body: JSON.stringify({ notify_email, notify_sms }),
     });
@@ -179,7 +179,7 @@
     if(!cur||!nw){el.style.display='inline';el.style.color='var(--err)';el.textContent='Fill in all fields.';return;}
     if(nw!==conf){el.style.display='inline';el.style.color='var(--err)';el.textContent='Passwords do not match.';return;}
     if(nw.length<6){el.style.display='inline';el.style.color='var(--err)';el.textContent='Min. 6 characters.';return;}
-    const result = await apiFetch('/api/change-password', {
+    const result = await customerApiFetch('/api/change-password', {
       method: 'POST',
       body: JSON.stringify({ current_password: cur, new_password: nw }),
     });
