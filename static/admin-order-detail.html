@@ -1103,7 +1103,7 @@
     if(r&&r.ok){
       payments.push(r.data.payment);
       document.getElementById('payModal').remove();
-      render(); showToast('Payment logged!');
+      renderAll(); showToast('Payment logged!');
     } else showToast('Failed to log payment','error');
   }
 
