@@ -60,25 +60,53 @@
 
 <script>
 
-  // Support admin "Customer View" preview
+  // Admin "Customer View" preview mode
   const params = new URLSearchParams(location.search);
   const _previewToken = params.get('preview_token');
-  if (_previewToken) {
+  const _isPreview = !!_previewToken;
+
+  if (_isPreview) {
     window._adminPreviewMode = true;
-    localStorage.setItem('customer_token', _previewToken);
+    sessionStorage.setItem('preview_customer_token', _previewToken);
+
+    // Inject CSS that hides all interactive action elements in preview mode
+    const style = document.createElement('style');
+    style.textContent = `
+      .preview-hide { display: none !important; }
+    `;
+    document.head.appendChild(style);
+
     const banner = document.createElement('div');
+    banner.id = 'previewBanner';
     banner.style.cssText = 'position:fixed;top:0;left:0;right:0;z-index:9999;background:#2c3e50;color:#f39c12;text-align:center;padding:8px 16px;font-size:12px;font-weight:700;letter-spacing:2px;text-transform:uppercase;';
-    banner.innerHTML = '👁 Admin Preview Mode — Viewing as Customer &nbsp;·&nbsp; <a href="javascript:window.close()" style="color:#e74c3c;text-decoration:underline;">Close Tab</a>';
+    banner.innerHTML = '👁 Admin Preview Mode — Read Only &nbsp;·&nbsp; <a href="javascript:window.close()" style="color:#e74c3c;text-decoration:underline;">Close Tab</a>';
     document.body.prepend(banner);
-    document.querySelector('.page').style.marginTop = '34px';
   }
 
-  requireCustomerAuth();
-  const user = JSON.parse(localStorage.getItem('customer_user')||'{}');
-  renderCustomerNav('customer-portal.html');
+  // In preview mode, skip the normal auth check and use the preview token
+  if (!_isPreview) {
+    requireCustomerAuth();
+  }
+
+  const user = _isPreview ? {} : JSON.parse(localStorage.getItem('customer_user')||'{}');
+  if (!_isPreview) renderCustomerNav('customer-portal.html');
 
   const OID = parseInt(params.get('id'));
   if (!OID) { window.location.href = 'customer-portal.html'; }
+
+  // Override customerApiFetch to use preview token when in preview mode
+  async function previewAwareFetch(endpoint, options = {}) {
+    if (_isPreview) {
+      const token = sessionStorage.getItem('preview_customer_token');
+      const headers = { 'Content-Type': 'application/json', ...(token ? { 'Authorization': `Bearer ${token}` } : {}), ...options.headers };
+      try {
+        const res = await fetch(endpoint, { ...options, headers });
+        const data = await res.json();
+        return { ok: res.ok, status: res.status, data };
+      } catch(e) { return null; }
+    }
+    return customerApiFetch(endpoint, options);
+  }
 
   const pip = ['free_waitlist','paid_waitlist','production_queue','prep','painting','completed','shipped','closed'];
 
@@ -99,7 +127,12 @@
   let myRefPhotos  = [];
 
   async function loadPage() {
-    const detailResult = await customerApiFetch('/api/orders/' + OID);
+    if (_isPreview) {
+      // Add top margin since nav is hidden but banner is showing
+      const page = document.querySelector('.page');
+      if (page) page.style.marginTop = '54px';
+    }
+    const detailResult = await previewAwareFetch('/api/orders/' + OID);
     if (!detailResult || !detailResult.ok) {
       window.location.href = 'customer-portal.html';
       return;
@@ -216,7 +249,7 @@
           ${ORDER.inbound_tracking?`<div class="track-num">${ORDER.inbound_tracking}</div><div style="font-size:11px;color:var(--txt-d);">Tracking on file</div>`:''}
           <div style="display:flex;gap:8px;margin-top:10px;">
             <input type="text" class="fc" id="inboundTrk" placeholder="Your tracking number" value="${ORDER.inbound_tracking||''}" style="flex:1;letter-spacing:1.5px;"/>
-            <button class="btn btn-gld btn-sm" onclick="saveInbound()">Save</button>
+            <button class="btn btn-gld btn-sm preview-hide" onclick="saveInbound()">Save</button>
           </div>
         </div>
         <div class="card">
@@ -232,7 +265,7 @@
       <div class="card" style="margin-bottom:18px;">
         <div class="card-head">
           <div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>My Reference Photos</div>
-          <label class="btn btn-out btn-sm" style="cursor:pointer;">+ Add Photos<input type="file" accept="image/*" multiple style="display:none;" onchange="addRefPhotos(event)"/></label>
+          <label class="btn btn-out btn-sm preview-hide" style="cursor:pointer;">+ Add Photos<input type="file" accept="image/*" multiple style="display:none;" onchange="addRefPhotos(event)"/></label>
         </div>
         <div style="font-size:12px;color:var(--txt-m);margin-bottom:10px;">Upload inspiration photos, references, or logos for Buffy to reference.</div>
         <div class="gallery" id="refGal"><div class="gmt">No reference photos yet.</div></div>
@@ -272,7 +305,7 @@
             return `<div style="margin-top:14px;padding:14px 16px;background:rgba(242,23,165,0.05);border:1px solid rgba(242,23,165,0.15);border-radius:8px;">
               <div style="font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mg);margin-bottom:10px;">⏳ Awaiting Your Approval</div>
               <div style="font-size:13px;color:var(--txt-m);margin-bottom:14px;">Review the mockup above. Once you approve, Buffy will begin painting. If you'd like changes, describe them below.</div>
-              <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;">
+              <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:12px;" class="preview-hide">
                 <button class="btn btn-mg" onclick="approveMockup(${latest.id}, true)">✅ Approve & Let Buffy Paint</button>
                 <button class="btn btn-out" onclick="openRequestChanges(${latest.id})">✏️ Request Changes</button>
               </div>
@@ -298,7 +331,7 @@
           <div class="card-title"><span class="card-dot" style="background:var(--vio-l);"></span>Design Revisions
             <span style="font-size:11px;font-weight:400;color:var(--txt-m);text-transform:none;letter-spacing:0;">— ${usedRevs}/${freeRevs} free revisions used</span>
           </div>
-          ${usedRevs<freeRevs?`<button class="btn btn-out btn-sm" onclick="openRevModal()">+ Request Revision</button>`:'<span style="font-size:11px;color:var(--warn);">3 free used — paid revisions only</span>'}
+          ${usedRevs<freeRevs?`<button class="btn btn-out btn-sm preview-hide" onclick="openRevModal()">+ Request Revision</button>`:'<span style="font-size:11px;color:var(--warn);">3 free used — paid revisions only</span>'}
         </div>
         <div style="padding:10px 0;margin-bottom:8px;font-size:12px;color:var(--txt-m);">
           Up to 3 revisions are included free. After that, additional revisions are $20 each.
