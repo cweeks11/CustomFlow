@@ -40,7 +40,7 @@ function renderAdminNav(active) {
         <span>${l.icon}</span> ${l.label}
       </a>`).join('')}
     <div class="nav-drop-mobile-divider" style="display:none;height:1px;background:var(--b1);"></div>
-    <a href="admin-settings.html" style="display:flex;padding:11px 16px;font-size:13px;color:var(--txt);text-decoration:none;align-items:center;gap:10px;">⚙️ Settings</a>
+    <a href="admin-settings.html" class="nav-drop-desktop-only" style="display:flex;padding:11px 16px;font-size:13px;color:var(--txt);text-decoration:none;align-items:center;gap:10px;">⚙️ Settings</a>
     <button onclick="logout()" style="width:100%;text-align:left;padding:11px 16px;font-size:13px;color:var(--err);background:none;border:none;cursor:pointer;font-family:var(--fd);border-top:1px solid var(--b1);display:flex;align-items:center;gap:10px;">🚪 Log Out</button>`;
   document.body.appendChild(drop);
 
@@ -52,6 +52,9 @@ function renderAdminNav(active) {
     });
     drop.querySelectorAll('.nav-drop-mobile-divider').forEach(el => {
       el.style.display = isMobile ? 'block' : 'none';
+    });
+    drop.querySelectorAll('.nav-drop-desktop-only').forEach(el => {
+      el.style.display = isMobile ? 'none' : 'flex';
     });
   }
   updateDropdownForMobile();
