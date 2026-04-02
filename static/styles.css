@@ -97,6 +97,9 @@ body {
 a { color: inherit; }
 a:visited { color: inherit; }
 
+/* Active page highlight in mobile dropdown */
+.nav-drop-active { color: var(--mg) !important; background: rgba(242,23,165,0.06); }
+
 /* ---- NAVBAR ---- */
 /* ---- 5. NAVIGATION BAR
    Fixed to top of screen on all pages.
