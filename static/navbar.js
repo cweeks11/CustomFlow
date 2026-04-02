@@ -46,7 +46,7 @@ function renderAdminNav(active) {
 
   // Show nav links in dropdown on mobile
   function updateDropdownForMobile() {
-    const isMobile = window.innerWidth <= 768;
+    const isMobile = window.innerWidth <= 900;
     drop.querySelectorAll('.nav-drop-link').forEach(el => {
       el.style.display = isMobile ? 'flex' : 'none';
     });
@@ -114,7 +114,7 @@ function renderCustomerNav(active) {
   document.body.appendChild(drop);
 
   function updateDropdownForMobile() {
-    const isMobile = window.innerWidth <= 768;
+    const isMobile = window.innerWidth <= 900;
     drop.querySelectorAll('.nav-drop-link').forEach(el => {
       el.style.display = isMobile ? 'flex' : 'none';
     });
