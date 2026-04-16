@@ -1,0 +1,487 @@
+/* ============================================================
+   COPE AESTHETIC CUSTOMS — DESIGN SYSTEM (styles.css)
+   ============================================================
+   This single CSS file styles every page in the app — both
+   admin and customer portals share the same design system.
+
+   BRAND COLORS (defined as CSS variables in :root below):
+     --mg  #F217A5  Magenta  — primary accent, buttons, badges
+     --gld #D8BC84  Gold     — secondary accent, prices, highlights
+     --chr #858488  Chrome   — muted text, neutral UI elements
+     --vio #44118C  Violet   — deep purple accent
+     --blk #0D0D0D  Black    — page background
+
+   FONTS:
+     Barlow Condensed — UI text, headers, buttons, labels
+     Cormorant Garamond — body copy, quotes, customer notes
+
+   HOW IT'S ORGANIZED:
+     1. CSS Variables (:root)
+     2. Reset & base styles
+     3. Scrollbar
+     4. Navigation bar (.nav)
+     5. Page layout (.page)
+     6. Cards (.card)
+     7. Stat cards (.stat)
+     8. Table (.tbl-wrap, table)
+     9. Buttons (.btn)
+    10. Form controls (.fg, .fl, .fc)
+    11. Layout grids (.g2, .g3, .g4)
+    12. Badges (.badge)
+    13. Modal / overlay (.overlay, .modal)
+    14. Toast notifications (.toast)
+    15. Loading spinner (.spin)
+    16. File upload / drop zone (.drop-zone)
+    17. Image gallery (.gallery, .gthumb)
+    18. Lightbox (.lb)
+    19. Accordion (.acc-item)
+    20. Toggle switches (.toggle)
+    21. Pipeline / progress bar (.pipeline)
+    22. Tracking number display (.track-num)
+    23. Error box (.err-box)
+    24. Dividers (.div, .div-gld)
+    25. Back link (.back)
+    26. Empty state (.empty)
+    27. Responsive breakpoints
+   ============================================================ */
+
+/* ---- 1. GOOGLE FONTS IMPORT ---- */
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,600;1,400;1,600&family=Barlow+Condensed:wght@300;400;500;600;700&display=swap');
+
+/* ============================================================
+   COPE AESTHETIC CUSTOMS — DESIGN SYSTEM
+   Brand: Outlaw Muse / Urban Luxe
+   Colors: Magenta #F217A5 · Black #0D0D0D · Gold #D8BC84
+           Chrome #858488 · Violet #44118C
+   ============================================================ */
+
+/* ---- 2. CSS VARIABLES
+   All colors, fonts, and spacing tokens live here.
+   Edit these to rebrand the entire app in one place. ---- */
+:root {
+  --mg:  #F217A5; --mg-d: #C4007D; --mg-glow: rgba(242,23,165,0.18);
+  --blk: #0D0D0D; --s1: #161616; --s2: #1F1F1F; --s3: #282828;
+  --b1:  #2C2C2C; --b2: #383838; --b3: #484848;
+  --gld: #D8BC84; --gld-d: #A8915A; --gld-b: #EDD49A;
+  --chr: #858488; --chr-l: #B0ADB3;
+  --vio: #44118C; --vio-l: #6B2FBE;
+  --txt: #F0EDE8; --txt-m: #858488; --txt-d: #444;
+  --ok:  #2ECC71; --warn: #E8A020; --err: #E74C3C; --info: #3498DB;
+  --nav: 64px;
+  --fd:  'Barlow Condensed', sans-serif;
+  --fb:  'Cormorant Garamond', Georgia, serif;
+}
+
+/* ---- 3. RESET & BASE STYLES ---- */
+*, *::before, *::after { margin:0; padding:0; box-sizing:border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: var(--fd);
+  background: var(--blk);
+  color: var(--txt);
+  min-height: 100vh;
+  font-size: 15px;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---- SCROLLBAR ---- */
+/* ---- 4. SCROLLBAR — custom dark scrollbar to match the theme ---- */
+::-webkit-scrollbar { width:5px; height:5px; }
+::-webkit-scrollbar-track { background: var(--blk); }
+::-webkit-scrollbar-thumb { background: var(--b2); border-radius:3px; }
+::-webkit-scrollbar-thumb:hover { background: var(--mg); }
+
+/* Prevent browser default blue/purple link colors from showing through */
+a { color: inherit; }
+a:visited { color: inherit; }
+
+/* Active page highlight in mobile dropdown */
+.nav-drop-active { color: var(--mg) !important; background: rgba(242,23,165,0.06); }
+
+/* ---- NAVBAR ---- */
+/* ---- 5. NAVIGATION BAR
+   Fixed to top of screen on all pages.
+   navbar.js injects the HTML — these styles handle the layout. ---- */
+.nav {
+  position:fixed; top:0; left:0; right:0; height:var(--nav); z-index:200;
+  background:rgba(13,13,13,0.96);
+  backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--b1);
+  display:flex; align-items:center; justify-content:space-between;
+  padding:0 28px;
+}
+.nav-logo img { height:36px; width:auto; object-fit:contain; }
+.nav-links { display:flex; align-items:center; gap:2px; }
+.nav-a {
+  color:var(--txt-m); text-decoration:none;
+  font-size:11px; font-weight:700; letter-spacing:1.8px; text-transform:uppercase;
+  padding:7px 14px; border-radius:4px; transition:all 0.2s;
+}
+.nav-a:hover  { color:var(--txt); background:var(--s2); }
+.nav-a.active { color:var(--mg); background:rgba(242,23,165,0.08); }
+.nav-right { display:flex; align-items:center; gap:12px; }
+.nav-chip {
+  font-size:9px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+  color:var(--gld); border:1px solid var(--gld-d); padding:3px 10px; border-radius:2px;
+}
+.nav-avatar {
+  width:34px; height:34px; border-radius:50%;
+  background:var(--s2); border:1.5px solid var(--mg);
+  display:flex; align-items:center; justify-content:center;
+  color:var(--mg); font-size:13px; font-weight:700; cursor:pointer; transition:all 0.2s;
+}
+.nav-avatar:hover { background:var(--mg); color:#fff; }
+
+/* ---- LAYOUT ---- */
+/* ---- 6. PAGE LAYOUT
+   .page wraps all page content below the nav.
+   padding-top accounts for the fixed navbar height (--nav: 64px). ---- */
+.page {
+  padding-top:calc(var(--nav) + 28px);
+  padding-left:28px; padding-right:28px; padding-bottom:48px;
+  max-width:1400px; margin:0 auto;
+}
+.page-sm { max-width:900px; }
+
+.page-head {
+  display:flex; align-items:center; justify-content:space-between;
+  flex-wrap:wrap; gap:12px; margin-bottom:28px;
+  padding-bottom:18px; border-bottom:1px solid var(--b1);
+}
+.page-title {
+  font-size:26px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+}
+.page-title span { color:var(--mg); }
+.page-sub { font-size:13px; color:var(--txt-m); margin-top:3px; }
+
+/* ---- CARDS ---- */
+/* ---- 7. CARDS
+   The primary content container used throughout the app.
+   .card-head provides a consistent title + action button row. ---- */
+.card {
+  background:var(--s1); border:1px solid var(--b1); border-radius:10px; padding:22px;
+}
+.card-head {
+  display:flex; align-items:center; justify-content:space-between;
+  margin-bottom:18px; padding-bottom:14px; border-bottom:1px solid var(--b1);
+}
+.card-title {
+  font-size:11px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--txt);
+  display:flex; align-items:center; gap:8px;
+}
+.card-dot { width:6px; height:6px; border-radius:50%; background:var(--mg); flex-shrink:0; }
+
+/* ---- STAT CARDS ---- */
+/* ---- 8. STAT CARDS
+   The KPI row shown at the top of dashboard and reports pages.
+   .stat.mg / .gld / .vio / .ok control the colored bottom border. ---- */
+.stats { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:14px; margin-bottom:22px; }
+.stat {
+  background:var(--s1); border:1px solid var(--b1); border-radius:10px;
+  padding:20px 22px; position:relative; overflow:hidden; transition:border-color 0.2s;
+}
+.stat:hover { border-color:var(--b2); }
+.stat::after { content:''; position:absolute; bottom:0; left:0; right:0; height:2px; background:var(--chr); }
+.stat.mg::after  { background:var(--mg); }
+.stat.gld::after { background:var(--gld); }
+.stat.vio::after { background:var(--vio-l); }
+.stat.ok::after  { background:var(--ok); }
+.stat-lbl { font-size:10px; font-weight:700; letter-spacing:2px; text-transform:uppercase; color:var(--txt-m); margin-bottom:8px; }
+.stat-val { font-size:36px; font-weight:700; letter-spacing:1px; line-height:1; }
+.stat-sub { font-size:11px; color:var(--txt-m); margin-top:6px; }
+.stat-sub.up   { color:var(--ok); }
+.stat-sub.down { color:var(--err); }
+
+/* ---- TABLE ---- */
+/* ---- 9. TABLES
+   .tbl-wrap adds overflow scroll for wide tables on small screens.
+   tbody tr hover highlights rows for better scannability. ---- */
+.tbl-wrap { overflow-x:auto; border-radius:10px; border:1px solid var(--b1); }
+table { width:100%; border-collapse:collapse; background:var(--s1); font-size:13px; }
+thead { background:var(--blk); }
+thead th {
+  color:var(--txt-m); font-size:10px; font-weight:700; letter-spacing:1.8px; text-transform:uppercase;
+  padding:13px 18px; text-align:left; white-space:nowrap; border-bottom:1px solid var(--b1);
+}
+tbody tr { border-bottom:1px solid var(--b1); transition:background 0.12s; }
+tbody tr:hover { background:var(--s2); }
+tbody tr:last-child { border-bottom:none; }
+tbody td { padding:12px 18px; color:var(--txt-m); vertical-align:middle; }
+tbody td strong, tbody td b { color:var(--txt); }
+
+/* ---- BUTTONS ---- */
+/* ---- 10. BUTTONS
+   .btn is the base class — always pair with a variant:
+     .btn-mg  = magenta filled (primary CTA)
+     .btn-gld = gold outlined (secondary)
+     .btn-out = subtle outlined
+     .btn-ghost = dark filled
+     .btn-err = red outlined (danger actions)
+   Size modifiers: .btn-sm  .btn-lg ---- */
+.btn {
+  display:inline-flex; align-items:center; gap:6px;
+  padding:8px 18px; border-radius:4px; border:none; cursor:pointer;
+  font-family:var(--fd); font-size:11px; font-weight:700; letter-spacing:1.8px; text-transform:uppercase;
+  transition:all 0.2s; text-decoration:none; white-space:nowrap; line-height:1;
+}
+.btn:disabled { opacity:0.4; cursor:not-allowed !important; transform:none !important; }
+.btn-mg   { background:var(--mg); color:#fff; }
+.btn-mg:hover   { background:var(--mg-d); box-shadow:0 4px 18px var(--mg-glow); transform:translateY(-1px); }
+.btn-gld  { background:transparent; color:var(--gld); border:1px solid var(--gld-d); }
+.btn-gld:hover  { background:var(--gld); color:var(--blk); border-color:var(--gld); }
+.btn-out  { background:transparent; border:1px solid var(--b2); color:var(--txt-m); }
+.btn-out:hover  { border-color:var(--mg); color:var(--mg); }
+.btn-ghost{ background:var(--s2); color:var(--txt-m); border:1px solid var(--b1); }
+.btn-ghost:hover{ color:var(--txt); }
+.btn-err  { background:transparent; color:var(--err); border:1px solid rgba(231,76,60,0.3); }
+.btn-err:hover  { background:rgba(231,76,60,0.1); }
+.btn-sm   { padding:5px 12px; font-size:10px; }
+.btn-lg   { padding:13px 32px; font-size:12px; letter-spacing:2px; }
+
+/* ---- FORMS ---- */
+/* ---- 11. FORM CONTROLS
+   .fg = form group wrapper (adds bottom margin)
+   .fl = form label
+   .fc = form control (input, select, textarea)
+   All inputs get the same dark background and focus glow. ---- */
+.fg { margin-bottom:16px; }
+.fl {
+  display:block; font-size:10px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase;
+  color:var(--txt-m); margin-bottom:6px;
+}
+.fc {
+  width:100%; padding:10px 13px;
+  background:var(--s2); border:1px solid var(--b1); border-radius:4px;
+  font-family:var(--fd); font-size:14px; color:var(--txt); outline:none; transition:border-color 0.2s;
+}
+.fc:focus { border-color:var(--mg); box-shadow:0 0 0 3px var(--mg-glow); }
+.fc::placeholder { color:var(--txt-d); }
+select.fc {
+  cursor:pointer; appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath fill='%23858488' d='M0 0l5 6 5-6z'/%3E%3C/svg%3E");
+  background-repeat:no-repeat; background-position:right 12px center;
+}
+select.fc option { background:var(--s2); color:var(--txt); }
+textarea.fc { resize:vertical; min-height:80px; }
+
+/* ---- GRID ---- */
+/* ---- 12. LAYOUT GRIDS
+   Responsive two, three, and four column grids.
+   Collapse to single column below 900px. ---- */
+.g2 { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+.g3 { display:grid; grid-template-columns:1fr 1fr 1fr; gap:16px; }
+.g4 { display:grid; grid-template-columns:repeat(4,1fr); gap:14px; }
+
+/* ---- BADGES ---- */
+/* ---- 13. GENERIC BADGE
+   Base badge style — statusBadge() in core.js generates
+   full inline badges with color, so this is rarely used directly. ---- */
+.badge {
+  display:inline-block; padding:3px 10px; border-radius:3px;
+  font-size:10px; font-weight:700; letter-spacing:1px; text-transform:uppercase;
+}
+
+/* ---- MODAL ---- */
+/* ---- 14. MODAL / OVERLAY
+   .overlay is the full-screen dark backdrop.
+   .overlay.open makes it visible (display:flex).
+   .modal is the white card that floats in the center. ---- */
+.overlay {
+  display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8);
+  z-index:500; align-items:center; justify-content:center; backdrop-filter:blur(6px);
+}
+.overlay.open { display:flex; }
+.modal {
+  background:var(--s1); border:1px solid var(--b1); border-radius:12px; padding:30px;
+  width:90%; max-width:540px; box-shadow:0 20px 60px rgba(0,0,0,0.6);
+  animation:mIn 0.22s ease;
+}
+@keyframes mIn { from{transform:scale(0.95) translateY(10px);opacity:0} to{transform:scale(1) translateY(0);opacity:1} }
+.modal-title {
+  font-size:15px; font-weight:700; letter-spacing:2px; text-transform:uppercase;
+  margin-bottom:22px; color:var(--txt);
+}
+.modal-x {
+  float:right; background:none; border:none; font-size:20px;
+  color:var(--txt-m); cursor:pointer; margin:-4px 0 0; transition:color 0.2s;
+}
+.modal-x:hover { color:var(--mg); }
+
+/* ---- TOAST ---- */
+/* ---- 15. TOAST NOTIFICATIONS
+   Slides up from bottom-right. showToast() in core.js
+   adds the .show class to trigger the animation. ---- */
+.toast {
+  position:fixed; bottom:24px; right:24px;
+  background:var(--s1); color:var(--txt); padding:11px 18px; border-radius:5px;
+  font-size:13px; border:1px solid var(--b1); border-left:3px solid var(--mg);
+  box-shadow:0 8px 28px rgba(0,0,0,0.5); z-index:9999;
+  transform:translateY(60px); opacity:0; transition:all 0.28s ease;
+}
+.toast.show { transform:translateY(0); opacity:1; }
+
+/* ---- SPINNER ---- */
+/* ---- 16. LOADING SPINNERS
+   .spin = full-size centered spinner (page loading states)
+   .spin-sm = small inline spinner inside buttons ---- */
+.spin {
+  width:30px; height:30px; border:2px solid var(--b1); border-top-color:var(--mg);
+  border-radius:50%; animation:spinning 0.7s linear infinite; margin:36px auto;
+}
+.spin-sm {
+  width:15px; height:15px; border:2px solid rgba(255,255,255,0.3); border-top-color:#fff;
+  border-radius:50%; animation:spinning 0.6s linear infinite; display:none;
+}
+@keyframes spinning { to{transform:rotate(360deg)} }
+
+/* ---- UPLOAD ZONE ---- */
+/* ---- 17. FILE UPLOAD DROP ZONE
+   Used for mockup and reference photo uploads.
+   .over class applied on dragover to show the hover state. ---- */
+.drop-zone {
+  border:2px dashed var(--b1); border-radius:8px; padding:28px 20px;
+  text-align:center; cursor:pointer; transition:all 0.2s;
+  background:var(--blk); position:relative;
+}
+.drop-zone:hover, .drop-zone.over { border-color:var(--mg); background:rgba(242,23,165,0.04); }
+.drop-zone input { position:absolute; inset:0; opacity:0; cursor:pointer; width:100%; height:100%; }
+.drop-txt { font-size:13px; color:var(--txt-m); margin-bottom:3px; }
+.drop-sub { font-size:11px; color:var(--txt-d); }
+
+/* ---- IMAGE GALLERY ---- */
+/* ---- 18. IMAGE GALLERY
+   Auto-fill grid of thumbnail images.
+   .gthumb delete button appears on hover (admin only). ---- */
+.gallery { display:grid; grid-template-columns:repeat(auto-fill,minmax(120px,1fr)); gap:10px; margin-top:12px; }
+.gthumb {
+  aspect-ratio:1; border-radius:6px; overflow:hidden;
+  background:var(--s2); border:1px solid var(--b1); position:relative;
+}
+.gthumb img { width:100%; height:100%; object-fit:cover; display:block; cursor:pointer; transition:transform 0.3s; }
+.gthumb:hover img { transform:scale(1.06); }
+.gthumb .gdel {
+  position:absolute; top:4px; right:4px;
+  background:rgba(231,76,60,0.85); color:#fff; border:none; border-radius:50%;
+  width:20px; height:20px; font-size:10px; cursor:pointer;
+  display:none; align-items:center; justify-content:center;
+}
+.gthumb:hover .gdel { display:flex; }
+.gmt { grid-column:1/-1; text-align:center; padding:24px; color:var(--txt-d); font-size:13px; }
+
+/* ---- LIGHTBOX ---- */
+/* ---- 19. LIGHTBOX
+   Full-screen image viewer — clicking a thumbnail opens it.
+   Click outside image or press Escape to close. ---- */
+.lb { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92); z-index:1000; align-items:center; justify-content:center; backdrop-filter:blur(8px); }
+.lb.open { display:flex; }
+.lb img { max-width:90vw; max-height:90vh; object-fit:contain; border-radius:6px; }
+.lb-x { position:absolute; top:22px; right:26px; background:none; border:none; color:#fff; font-size:26px; cursor:pointer; opacity:0.7; }
+.lb-x:hover { opacity:1; }
+
+/* ---- ACCORDION ---- */
+/* ---- 20. ACCORDION
+   Used for FAQs on customer pages and settings sections on admin.
+   .acc-head.open and .acc-body.open toggle visibility via JS. ---- */
+.acc-item { border:1px solid var(--b1); border-radius:8px; margin-bottom:8px; overflow:hidden; }
+.acc-head {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:15px 18px; cursor:pointer; background:var(--s1);
+  font-size:11px; font-weight:700; letter-spacing:1.8px; text-transform:uppercase;
+  color:var(--txt); transition:background 0.15s; user-select:none;
+}
+.acc-head:hover { background:var(--s2); }
+.acc-head.open { color:var(--mg); }
+.acc-body { display:none; padding:20px; border-top:1px solid var(--b1); background:var(--blk); }
+.acc-body.open { display:block; }
+.acc-arr { transition:transform 0.2s; color:var(--txt-d); font-size:11px; }
+.acc-head.open .acc-arr { transform:rotate(180deg); }
+
+/* ---- TOGGLE ---- */
+/* ---- 21. TOGGLE SWITCH ROWS
+   Used in notification settings and order form.
+   The .toggle / .tslider pattern creates the pill toggle animation. ---- */
+.tog-row {
+  display:flex; align-items:center; justify-content:space-between;
+  padding:11px 0; border-bottom:1px solid var(--b1);
+}
+.tog-row:last-of-type { border-bottom:none; }
+.tog-lbl { font-size:13px; color:var(--txt-m); }
+.toggle { position:relative; width:44px; height:24px; flex-shrink:0; }
+.toggle input { opacity:0; width:0; height:0; }
+.tslider { position:absolute; inset:0; background:var(--b1); border-radius:24px; cursor:pointer; transition:background 0.2s; }
+.tslider::before { content:''; position:absolute; width:18px; height:18px; left:3px; bottom:3px; background:var(--chr); border-radius:50%; transition:transform 0.2s; }
+.toggle input:checked + .tslider { background:var(--mg); }
+.toggle input:checked + .tslider::before { background:#fff; transform:translateX(20px); }
+
+/* ---- PIPELINE BAR ---- */
+/* ---- 22. PIPELINE / PROGRESS BAR
+   Shows the order's current stage across the full workflow.
+   .pip-node.past = completed stages (green)
+   .pip-node.active = current stage (magenta glow)
+   .pip-node.future = upcoming stages (gray) ---- */
+.pipeline { overflow-x:auto; padding-bottom:4px; margin-top:16px; }
+.pip-track { display:flex; align-items:center; min-width:max-content; }
+.pip-node {
+  padding:5px 11px; font-size:9px; font-weight:700; letter-spacing:1.2px;
+  text-transform:uppercase; border-radius:3px; white-space:nowrap; border:1px solid;
+}
+.pip-node.past   { background:rgba(46,204,113,0.1); color:var(--ok); border-color:rgba(46,204,113,0.3); }
+.pip-node.active { background:var(--mg); color:#fff; border-color:var(--mg); box-shadow:0 0 10px rgba(242,23,165,0.35); }
+.pip-node.future { background:transparent; color:var(--txt-d); border-color:var(--b1); }
+.pip-conn { width:20px; height:1px; flex-shrink:0; }
+.pip-conn.past   { background:var(--ok); }
+.pip-conn.future { background:var(--b1); }
+
+/* ---- TRACKING DISPLAY ---- */
+/* ---- 23. TRACKING NUMBER DISPLAY
+   Large gold monospaced-style text for shipping tracking numbers.
+   .track-num.empty shows a placeholder style when no number exists. ---- */
+.track-num {
+  font-size:20px; font-weight:700; letter-spacing:3px; color:var(--gld);
+  margin:6px 0; word-break:break-all;
+}
+.track-num/* ---- 27. EMPTY STATE
+   Centered placeholder shown when a list has no items. ---- */
+.empty { color:var(--txt-d); font-size:14px; font-weight:400; letter-spacing:1px; }
+
+/* ---- ERROR BOX ---- */
+/* ---- 24. ERROR BOX
+   Red inline error message shown above form submit buttons.
+   Hidden by default — .err-box.show makes it visible. ---- */
+.err-box {
+  background:rgba(231,76,60,0.1); border:1px solid rgba(231,76,60,0.3);
+  color:var(--err); border-radius:4px; padding:10px 13px;
+  font-size:13px; margin-bottom:14px; display:none;
+}
+.err-box.show { display:block; }
+
+/* ---- DIVIDERS ---- */
+/* ---- 25. DIVIDERS ---- */
+.div  { height:1px; background:var(--b1); margin:18px 0; }
+.div-gld { height:1px; background:linear-gradient(to right,transparent,var(--gld-d),transparent); margin:24px 0; }
+
+/* ---- BACK LINK ---- */
+/* ---- 26. BACK LINK
+   The "← Back to Orders" style link at the top of detail pages. ---- */
+.back {
+  display:inline-flex; align-items:center; gap:7px;
+  font-size:11px; font-weight:700; letter-spacing:1.5px; text-transform:uppercase;
+  color:var(--txt-m); text-decoration:none; margin-bottom:18px; transition:color 0.2s;
+}
+.back:hover { color:var(--mg); }
+
+/* ---- EMPTY STATE ---- */
+.empty { text-align:center; padding:56px 20px; }
+.empty-icon { font-size:36px; opacity:0.3; margin-bottom:12px; }
+.empty-txt  { font-size:13px; color:var(--txt-m); margin-bottom:16px; }
+
+/* ---- RESPONSIVE ---- */
+/* ---- 28. RESPONSIVE BREAKPOINTS
+   Below 900px: collapse grids to single column, hide nav links. ---- */
+@media (max-width:900px) {
+  .page { padding:calc(var(--nav) + 14px) 16px 32px; }
+  .g2,.g3,.g4 { grid-template-columns:1fr; }
+  .nav-links { display:none; }
+}

@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Pending Approval — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+<script>requireCustomerAuth(); renderCustomerNav('customer-pending.html');</script>
+
+<div class="page page-sm" style="display:flex;align-items:center;justify-content:center;min-height:calc(100vh - 70px);">
+  <div style="max-width:520px;width:100%;text-align:center;padding:20px;">
+
+    <!-- Icon -->
+    <div style="font-size:56px;margin-bottom:20px;">⭐</div>
+
+    <!-- Heading -->
+    <div style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--mg);margin-bottom:10px;">Account Submitted</div>
+    <div style="font-size:28px;font-weight:700;letter-spacing:1px;text-transform:uppercase;line-height:1.1;margin-bottom:16px;">
+      Waiting for<br/>Buffy's Approval
+    </div>
+
+    <!-- Status card -->
+    <div style="background:rgba(232,160,32,0.08);border:1px solid rgba(232,160,32,0.3);border-radius:12px;padding:24px;margin-bottom:24px;text-align:left;">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px;">
+        <span style="font-size:18px;">⏳</span>
+        <div style="font-size:13px;font-weight:700;color:var(--warn);">Influencer Account — Pending Review</div>
+      </div>
+      <div style="font-size:13px;color:var(--txt-m);line-height:1.7;">
+        You're all signed up! Since you selected <strong style="color:var(--txt);">Influencer</strong> as your account type,
+        Buffy needs to review your request before you can place orders.
+        She'll reach out by email once it's been approved.
+      </div>
+    </div>
+
+    <!-- What happens next -->
+    <div style="background:var(--s2);border:1px solid var(--b1);border-radius:12px;padding:20px;margin-bottom:24px;text-align:left;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--txt-d);margin-bottom:14px;">What happens next</div>
+      <div style="display:flex;flex-direction:column;gap:12px;">
+        <div style="display:flex;align-items:flex-start;gap:12px;">
+          <div style="width:22px;height:22px;border-radius:50%;background:var(--mg);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">1</div>
+          <div style="font-size:13px;color:var(--txt-m);line-height:1.5;"><strong style="color:var(--txt);">Buffy reviews your request</strong> — usually within 1–2 business days.</div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;">
+          <div style="width:22px;height:22px;border-radius:50%;background:var(--mg);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">2</div>
+          <div style="font-size:13px;color:var(--txt-m);line-height:1.5;"><strong style="color:var(--txt);">You'll get an email</strong> at <span id="pendingEmail" style="color:var(--gld-d);">your email</span> when your account is approved or if she needs more info.</div>
+        </div>
+        <div style="display:flex;align-items:flex-start;gap:12px;">
+          <div style="width:22px;height:22px;border-radius:50%;background:var(--mg);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;">3</div>
+          <div style="font-size:13px;color:var(--txt-m);line-height:1.5;"><strong style="color:var(--txt);">Once approved</strong>, you can log in and place your first order.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px;">
+      <a href="customer-portal.html" class="btn btn-mg" style="justify-content:center;padding:13px;">
+        Go to My Portal →
+      </a>
+      <button onclick="switchToIndividual()" class="btn btn-out" style="justify-content:center;padding:13px;">
+        Changed my mind — switch to Individual account
+      </button>
+    </div>
+
+    <!-- Contact -->
+    <div style="font-size:12px;color:var(--txt-d);line-height:1.7;">
+      Questions? Reach Buffy at
+      <a href="mailto:CopeAestheticCustoms@gmail.com" style="color:var(--gld-d);text-decoration:none;">CopeAestheticCustoms@gmail.com</a>
+      or <a href="tel:9192952569" style="color:var(--gld-d);text-decoration:none;">(919) 295-2569</a>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // Show the user's email in the "you'll get an email at" line
+  (function() {
+    const user = JSON.parse(localStorage.getItem('customer_user') || '{}');
+    const emailEl = document.getElementById('pendingEmail');
+    if (emailEl && user.email) emailEl.textContent = user.email;
+
+    // If they're not actually an influencer (e.g. navigated here directly),
+    // redirect to portal
+    if (user.customer_type && user.customer_type !== 'influencer') {
+      window.location.href = 'customer-portal.html';
+    }
+  })();
+
+  async function switchToIndividual() {
+    if (!confirm('Switch your account type to Individual? You can always change it back in Settings.')) return;
+
+    const result = await apiFetch('/api/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ customer_type: 'individual' }),
+    });
+
+    if (result && result.ok) {
+      // Update localStorage
+      const user = JSON.parse(localStorage.getItem('customer_user') || '{}');
+      localStorage.setItem('customer_user', JSON.stringify({
+        ...user,
+        customer_type: 'individual',
+        influencer_status: null,
+      }));
+      showToast('Account switched to Individual!');
+      setTimeout(() => window.location.href = 'customer-portal.html', 1200);
+    } else {
+      showToast('Failed to update — please try again or change it in Settings.', 'error');
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,251 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Dashboard — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<!--
+  PAGE: Admin Dashboard (admin-dashboard.html)
+  ============================================================
+  PURPOSE:
+    The main home screen after admin login. Shows Buffy a snapshot
+    of the entire business at a glance — how many orders are in each
+    stage, any rush requests needing approval, and recent order activity.
+
+  WHAT'S ON THIS PAGE:
+    1. Stats row — total orders, rush pending, in production, completed
+    2. Rush alert banner — only appears if rush orders need Buffy's approval
+    3. Two charts (Chart.js):
+         - Donut: orders by pipeline stage
+         - Bar: orders by item type
+    4. Recent orders table — last 8 orders, clickable rows to detail page
+
+  KEY FUNCTIONS:
+    loadAll()       — reads MOCK.orders and MOCK.payments, calculates
+                      all stats, builds both charts, populates the table.
+                      Replace MOCK reads with apiFetch('/api/dashboard') when live.
+
+  FILES NEEDED:
+    core.js     — MOCK data, statusBadge(), formatDate(), STATUSES
+    navbar.js   — renderAdminNav() injects the top navigation
+    styles.css  — all visual styling
+    Chart.js    — loaded from CDN for the two charts
+
+  AUTH:
+    requireAdminAuth() called at top — redirects to index.html if not logged in
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+
+<div class="page">
+  <div class="page-head">
+    <div>
+      <div class="page-title">Dashboard</div>
+      <div class="page-sub" id="dateStr"></div>
+    </div>
+    <button class="btn btn-gld" onclick="loadAll()">↻ Refresh</button>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats" id="stats">
+    <div class="stat mg"><div class="spin"></div></div>
+    <div class="stat gld"><div class="spin"></div></div>
+    <div class="stat vio"><div class="spin"></div></div>
+    <div class="stat ok"><div class="spin"></div></div>
+  </div>
+
+  <!-- QUEUE ALERT -->
+  <div id="rushAlert" style="display:none;margin-bottom:18px;padding:12px 18px;background:rgba(232,160,32,0.08);border:1px solid rgba(232,160,32,0.25);border-radius:8px;font-size:13px;color:var(--warn);align-items:center;gap:10px;">
+    ⚡ <span id="rushAlertText"></span> <a href="admin-orders.html?filter=rush" style="color:var(--gld);margin-left:auto;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;">Review →</a>
+  </div>
+  <div id="influencerAlert" style="display:none;margin-bottom:18px;padding:12px 18px;background:rgba(242,23,165,0.06);border:1px solid rgba(242,23,165,0.2);border-radius:8px;font-size:13px;color:var(--mg);align-items:center;gap:10px;">
+    ⭐ <span id="influencerAlertText"></span> <a href="admin-settings.html" style="color:var(--mg);margin-left:auto;font-weight:700;font-size:11px;letter-spacing:1px;text-transform:uppercase;text-decoration:none;">Review →</a>
+  </div>
+
+  <!-- CHARTS -->
+  <div class="g2" style="margin-bottom:20px;">
+    <div class="card">
+      <div class="card-head"><div class="card-title"><span class="card-dot"></span>Orders by Stage</div></div>
+      <div style="position:relative;height:240px;"><canvas id="stageChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Item Types</div></div>
+      <div style="position:relative;height:240px;"><canvas id="typeChart"></canvas></div>
+    </div>
+  </div>
+
+
+  <!-- PRODUCTION QUEUE SNAPSHOT -->
+  <div class="card" style="margin-bottom:20px;padding:0;overflow:hidden;">
+    <div style="padding:16px 22px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--b1);">
+      <div class="card-title"><span class="card-dot"></span>Production Queue Snapshot</div>
+      <a href="admin-queue.html" class="btn btn-out btn-sm">Full Queue View →</a>
+    </div>
+    <div id="queueSnap" style="padding:0;"></div>
+  </div>
+
+  <!-- RECENT ORDERS -->
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:18px 22px 14px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid var(--b1);">
+      <div class="card-title"><span class="card-dot"></span>Recent Orders</div>
+      <a href="admin-orders.html" class="btn btn-out btn-sm">View All</a>
+    </div>
+    <div class="tbl-wrap" style="border:none;border-radius:0;">
+      <table>
+        <thead><tr>
+          <th>Order</th><th>Customer</th><th>Item</th><th>Tier</th><th>Rush</th><th>Date</th><th>Status</th>
+        </tr></thead>
+        <tbody id="recentBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  requireAdminAuth();
+  renderAdminNav('admin-dashboard.html');
+  document.getElementById('dateStr').textContent = new Date().toLocaleDateString('en-US',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+
+  let stageInst=null, typeInst=null;
+
+  async function loadAll() {
+    // Fire all API calls in parallel
+    const [dashResult, infRes, qRes] = await Promise.all([
+      apiFetch('/api/dashboard'),
+      apiFetch('/api/users/influencer-pending'),
+      apiFetch('/api/queue'),
+    ]);
+
+    // --- Stats (use dashboard API data directly) ---
+    if (!dashResult || !dashResult.ok) {
+      document.getElementById('stats').innerHTML =
+        '<div style="color:var(--err);padding:16px;grid-column:1/-1;">Failed to load dashboard data. Check your connection.</div>';
+    } else {
+      const dash = dashResult.data;
+      const stats = dash.stats || {};
+      const rushPending = stats.rush_pending || 0;
+
+      document.getElementById('stats').innerHTML = `
+        <div class="stat mg">
+          <div class="stat-lbl">Total Orders</div>
+          <div class="stat-val">${stats.total_orders ?? 0}</div>
+          <div class="stat-sub">All time</div>
+        </div>
+        <div class="stat gld">
+          <div class="stat-lbl">Rush Pending Approval</div>
+          <div class="stat-val">${rushPending}</div>
+          <div class="stat-sub ${rushPending > 0 ? 'down' : ''}">Needs review</div>
+        </div>
+        <div class="stat vio">
+          <div class="stat-lbl">In Production</div>
+          <div class="stat-val">${stats.in_production ?? 0}</div>
+          <div class="stat-sub">Active</div>
+        </div>
+        <div class="stat ok">
+          <div class="stat-lbl">Completed</div>
+          <div class="stat-val">${stats.completed ?? 0}</div>
+          <div class="stat-sub up">Done</div>
+        </div>`;
+
+      // Rush alert
+      if (rushPending > 0) {
+        document.getElementById('rushAlertText').textContent =
+          `${rushPending} rush order${rushPending > 1 ? 's' : ''} pending your approval.`;
+        document.getElementById('rushAlert').style.display = 'flex';
+      }
+
+      // --- Charts (use pre-aggregated data from dashboard API) ---
+      const statusCounts = dash.status_counts || {};
+      const typeCounts   = dash.type_counts   || {};
+      const COLORS = ['#F217A5','#D8BC84','#6B2FBE','#E8A020','#2ECC71','#3498DB','#858488','#E74C3C'];
+
+      const stageCtx = document.getElementById('stageChart').getContext('2d');
+      if (stageInst) stageInst.destroy();
+      stageInst = new Chart(stageCtx, {
+        type: 'doughnut',
+        data: {
+          labels: STATUS_PIPELINE.map(s => STATUSES[s].label),
+          datasets: [{ data: STATUS_PIPELINE.map(s => statusCounts[s] || 0), backgroundColor: COLORS, borderWidth: 0 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false, cutout: '65%',
+          plugins: { legend: { position: 'bottom', labels: { font: { family: 'Barlow Condensed', size: 11 }, padding: 12, color: '#858488' } } } }
+      });
+
+      const typeCtx = document.getElementById('typeChart').getContext('2d');
+      if (typeInst) typeInst.destroy();
+      typeInst = new Chart(typeCtx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(typeCounts),
+          datasets: [{ label: 'Orders', data: Object.values(typeCounts), backgroundColor: '#F217A5', borderRadius: 5 }]
+        },
+        options: { responsive: true, maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            y: { beginAtZero: true, grid: { color: '#2C2C2C' }, ticks: { font: { family: 'Barlow Condensed' }, color: '#858488' } },
+            x: { grid: { display: false }, ticks: { font: { family: 'Barlow Condensed' }, color: '#858488' } }
+          }
+        }
+      });
+
+      // --- Recent orders (use pre-fetched list from dashboard API) ---
+      const recent = dash.recent_orders || [];
+      document.getElementById('recentBody').innerHTML = recent.map(o => `
+        <tr style="cursor:pointer;" onclick="window.location='admin-order-detail.html?id=${o.id}'">
+          <td><strong>#${o.id}</strong></td>
+          <td>${o.customer_name || '—'}</td>
+          <td>${o.item_type}</td>
+          <td style="text-transform:capitalize;">${o.pricing_tier || '—'}</td>
+          <td>${o.is_rush ? `<span style="color:var(--warn);font-weight:700;font-size:11px;">⚡ ${o.rush_approved ? 'Approved' : 'Pending'}</span>` : '—'}</td>
+          <td>${formatDate(o.created_at)}</td>
+          <td>${statusBadge(o.status)}</td>
+        </tr>`).join('') || '<tr><td colspan="7" style="text-align:center;color:var(--txt-d);">No orders yet.</td></tr>';
+    }
+
+    // --- Influencer alert ---
+    const infPending = (infRes && infRes.ok) ? (infRes.data || []).length : 0;
+    if (infPending > 0) {
+      document.getElementById('influencerAlertText').textContent =
+        `${infPending} influencer request${infPending > 1 ? 's' : ''} waiting for your approval.`;
+      document.getElementById('influencerAlert').style.display = 'flex';
+    }
+
+    // --- Production Queue Snapshot ---
+    const qActive  = (qRes && qRes.ok) ? (qRes.data.active  || []) : [];
+    const qWaiting = (qRes && qRes.ok) ? (qRes.data.waiting || []) : [];
+    const qAll = [...qActive, ...qWaiting];
+    const qSnap = document.getElementById('queueSnap');
+    if (!qAll.length) {
+      qSnap.innerHTML = '<div style="padding:20px;text-align:center;font-size:13px;color:var(--txt-d);">No orders currently in production or waiting.</div>';
+    } else {
+      const activeSet = new Set(qActive.map(o => o.id));
+      qSnap.innerHTML = qAll.slice(0, 5).map((o, i) => {
+        const isActive = activeSet.has(o.id);
+        const isFirst  = i === 0;
+        const pri = (o.is_rush && o.rush_approved)
+          ? '<span style="color:var(--warn);font-size:10px;font-weight:700;">⚡ RUSH</span>'
+          : o.must_have_by
+          ? '<span style="color:var(--vio-l);font-size:10px;font-weight:700;">📅 DATE</span>'
+          : '<span style="color:var(--chr);font-size:10px;">FIFO</span>';
+        return `<div style="display:flex;align-items:center;gap:14px;padding:13px 22px;border-bottom:1px solid var(--b1);cursor:pointer;${isFirst ? 'background:rgba(242,23,165,0.03);' : ''}${!isActive ? 'opacity:0.7;' : ''}" onclick="window.location='admin-order-detail.html?id=${o.id}'">
+          <div style="width:28px;height:28px;border-radius:50%;background:${isFirst ? 'var(--mg)' : 'var(--s2)'};border:1px solid ${isFirst ? 'var(--mg)' : 'var(--b1)'};display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;color:${isFirst ? '#fff' : 'var(--txt-m)'};flex-shrink:0;">${i + 1}</div>
+          <div style="flex:1;min-width:0;">
+            <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;${isFirst ? 'color:var(--txt);' : ''}">${o.item_type} <span style="color:var(--txt-d);font-weight:400;font-size:11px;">#${o.id}</span></div>
+            <div style="font-size:11px;color:var(--txt-m);">${o.customer_name || '—'} · ${o.pricing_tier || '—'}${o.must_have_by ? ' · Due ' + formatDate(o.must_have_by) : ''}</div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;">${pri} ${statusBadge(o.status)}</div>
+          ${isFirst ? '<div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--mg);flex-shrink:0;">NOW</div>' : ''}
+        </div>`;
+      }).join('') + (qAll.length > 5 ? `<div style="padding:10px 22px;font-size:12px;color:var(--txt-d);"><a href="admin-queue.html" style="color:var(--mg);text-decoration:none;">+ ${qAll.length - 5} more in queue →</a></div>` : '');
+    }
+  }
+
+  loadAll();
+</script>
+</body>
+</html>

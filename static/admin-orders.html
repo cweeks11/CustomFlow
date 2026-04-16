@@ -1,0 +1,313 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Orders — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!--
+  PAGE: Admin Orders List (admin-orders.html)
+  ============================================================
+  PURPOSE:
+    Full paginated table of every order in the system.
+    Buffy uses this to scan for rush approvals, check payment status,
+    and navigate to individual order detail pages.
+
+  WHAT'S ON THIS PAGE:
+    1. Search box — filters by customer name, email, order ID, item type
+    2. Filter dropdowns — by status, rush state, pricing tier
+    3. Orders table — sortable, 15 rows per page
+    4. Rush approval modal — quick approve/deny without leaving the list
+    5. Pagination controls
+
+  KEY FUNCTIONS:
+    loadOrders()   — loads all orders from MOCK, checks URL params for
+                     pre-applied filters (e.g. ?filter=rush from dashboard)
+    filter()       — applies all four filter criteria simultaneously and
+                     re-renders the table. Called on every input/change event.
+    render()       — slices the filtered array for the current page and
+                     builds the table HTML
+    pg(dir)        — increments/decrements the page number and re-renders
+    openRushModal(id) — opens the approve/deny modal for a specific rush order
+    approveRush(id, approved) — updates orders[].rush_approved and re-filters
+
+  BACKEND TODO:
+    loadOrders()   → GET /api/orders (with optional query params for filters)
+    approveRush()  → PATCH /api/orders/:id  { rush_approved: true/false }
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+
+<div class="page">
+  <div class="page-head">
+    <div><div class="page-title">Orders</div><div class="page-sub">Manage all customer orders</div></div>
+    <button class="btn btn-gld" onclick="loadOrders()">↻ Refresh</button>
+  </div>
+
+  <!-- TABS -->
+  <div style="display:flex;gap:4px;margin-bottom:20px;border-bottom:1px solid var(--b1);padding-bottom:0;">
+    <button id="tabActive" onclick="switchTab('active')"
+      style="padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;background:none;border:none;border-bottom:2px solid var(--mg);color:var(--mg);cursor:pointer;font-family:var(--fd);">
+      Active Orders
+    </button>
+    <button id="tabArchived" onclick="switchTab('archived')"
+      style="padding:10px 20px;font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;background:none;border:none;border-bottom:2px solid transparent;color:var(--txt-m);cursor:pointer;font-family:var(--fd);">
+      🗃 Archived
+    </button>
+  </div>
+
+  <!-- FILTERS (hidden on archived tab) -->
+  <div id="filtersRow" style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px;align-items:center;">
+    <div style="position:relative;flex:1;min-width:220px;">
+      <span style="position:absolute;left:11px;top:50%;transform:translateY(-50%);color:var(--txt-d);font-size:13px;">🔍</span>
+      <input type="text" id="search" placeholder="Search name, email, order #, item..." oninput="filter()"
+        style="width:100%;padding:9px 13px 9px 34px;background:var(--s1);border:1px solid var(--b1);border-radius:4px;font-family:var(--fd);font-size:13px;color:var(--txt);outline:none;"
+        onfocus="this.style.borderColor='var(--mg)'" onblur="this.style.borderColor='var(--b1)'"/>
+    </div>
+    <select class="fc" id="statusF" onchange="filter()" style="width:auto;min-width:160px;">
+      <option value="">All Statuses</option>
+    </select>
+    <select class="fc" id="rushF" onchange="filter()" style="width:auto;min-width:140px;">
+      <option value="">All Orders</option>
+      <option value="rush_pending">⚡ Rush — Pending</option>
+      <option value="rush_approved">⚡ Rush — Approved</option>
+    </select>
+    <select class="fc" id="tierF" onchange="filter()" style="width:auto;min-width:140px;">
+      <option value="">All Tiers</option>
+      <option value="standard">Standard</option>
+      <option value="detailed">Detailed</option>
+      <option value="premium">Premium</option>
+    </select>
+  </div>
+
+  <!-- TABLE -->
+  <div class="tbl-wrap">
+    <table>
+      <thead><tr id="tableHead">
+        <th>Order #</th><th>Customer</th><th>Item</th><th>Tier</th><th>Rush</th>
+        <th>Booking Fee</th><th>Must Have By</th><th>Date</th><th>Status</th><th>Actions</th>
+      </tr></thead>
+      <tbody id="tBody"></tbody>
+    </table>
+  </div>
+
+  <!-- PAGINATION -->
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-top:14px;flex-wrap:wrap;gap:10px;">
+    <div id="pgInfo" style="font-size:13px;color:var(--txt-m);"></div>
+    <div style="display:flex;gap:8px;">
+      <button class="btn btn-out btn-sm" id="prevBtn" onclick="pg(-1)">← Prev</button>
+      <button class="btn btn-out btn-sm" id="nextBtn" onclick="pg(1)">Next →</button>
+    </div>
+  </div>
+</div>
+
+<!-- STATUS UPDATE MODAL -->
+<div class="overlay" id="statusModal">
+  <div class="modal">
+    <button class="modal-x" onclick="closeModal()">✕</button>
+    <div class="modal-title" id="modalTitle">Update Order</div>
+    <div id="modalBody"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  requireAdminAuth();
+  renderAdminNav('admin-orders.html');
+
+  let all=[], filtered=[], page=1, activeOrders=[], archivedOrders=[];
+  let currentTab = 'active';
+  const PER=15;
+  const users = {};
+
+  // Build status select options
+  document.querySelector('#statusF').innerHTML = '<option value="">All Statuses</option>' +
+    Object.entries(STATUSES).map(([k,v])=>`<option value="${k}">${v.label}</option>`).join('');
+
+  // Load all data on init
+  (async () => {
+    const [ordersRes, archivedRes, usersRes] = await Promise.all([
+      apiFetch('/api/orders'),
+      apiFetch('/api/orders?archived=true'),
+      apiFetch('/api/users')
+    ]);
+    activeOrders   = (ordersRes   && ordersRes.ok)   ? ordersRes.data   : [];
+    archivedOrders = (archivedRes && archivedRes.ok) ? archivedRes.data : [];
+
+    if (usersRes && usersRes.ok) {
+      (usersRes.data || []).forEach(u => users[u.id]=u);
+    }
+    const me = JSON.parse(localStorage.getItem('admin_user')||'{}');
+    if (me.id) users[me.id] = me;
+
+    loadOrders();
+  })();
+
+  function switchTab(tab) {
+    currentTab = tab;
+    // Update tab styles
+    document.getElementById('tabActive').style.borderBottomColor   = tab==='active'   ? 'var(--mg)' : 'transparent';
+    document.getElementById('tabActive').style.color               = tab==='active'   ? 'var(--mg)' : 'var(--txt-m)';
+    document.getElementById('tabArchived').style.borderBottomColor = tab==='archived' ? 'var(--mg)' : 'transparent';
+    document.getElementById('tabArchived').style.color             = tab==='archived' ? 'var(--mg)' : 'var(--txt-m)';
+    // Show/hide filters (not needed on archived tab)
+    document.getElementById('filtersRow').style.display = tab==='active' ? 'flex' : 'none';
+    // Swap table headers
+    document.getElementById('tableHead').innerHTML = tab==='active'
+      ? `<th>Order #</th><th>Customer</th><th>Item</th><th>Tier</th><th>Rush</th>
+         <th>Booking Fee</th><th>Must Have By</th><th>Date</th><th>Status</th><th>Actions</th>`
+      : `<th>Order #</th><th>Customer</th><th>Item</th><th>Tier</th>
+         <th>Final Status</th><th>Archived On</th><th>Actions</th>`;
+    loadOrders();
+  }
+
+  async function loadOrders() {
+    if (currentTab === 'active') {
+      all = [...activeOrders].sort((a,b)=>new Date(b.created_at)-new Date(a.created_at));
+      const p = new URLSearchParams(location.search);
+      if (p.get('filter')==='rush') document.getElementById('rushF').value='rush_pending';
+      filter();
+    } else {
+      // Archived tab — refresh from API each time in case something was just archived
+      const res = await apiFetch('/api/orders?archived=true');
+      archivedOrders = (res && res.ok) ? res.data : [];
+      all = [...archivedOrders].sort((a,b)=>new Date(b.archived_at)-new Date(a.archived_at));
+      filtered = all;
+      page = 1;
+      renderArchived();
+    }
+  }
+
+  function filter(){
+    const s  = document.getElementById('search').value.toLowerCase();
+    const st = document.getElementById('statusF').value;
+    const ru = document.getElementById('rushF').value;
+    const ti = document.getElementById('tierF').value;
+    filtered = all.filter(o=>{
+      const u = users[o.user_id]||{};
+      const ms = `${o.id} ${o.order_number||''} ${u.name||o.customer_name||''} ${u.email||o.customer_email||''} ${o.item_type}`.toLowerCase();
+      const mSearch = !s || ms.includes(s);
+      const mStatus = !st || o.status===st;
+      const mRush   = !ru || (ru==='rush_pending'&&o.is_rush&&!o.rush_approved) || (ru==='rush_approved'&&o.rush_approved);
+      const mTier   = !ti || o.pricing_tier===ti;
+      return mSearch && mStatus && mRush && mTier;
+    });
+    page=1; render();
+  }
+
+  function render(){
+    const start=(page-1)*PER;
+    const slice=filtered.slice(start,start+PER);
+    const tbody=document.getElementById('tBody');
+    if(!slice.length){
+      tbody.innerHTML=`<tr><td colspan="10"><div class="empty"><div class="empty-icon">📋</div><div class="empty-txt">No orders found.</div></div></td></tr>`;
+      document.getElementById('pgInfo').textContent='';
+      document.getElementById('prevBtn').disabled=true;
+      document.getElementById('nextBtn').disabled=true;
+      return;
+    }
+    tbody.innerHTML=slice.map(o=>{
+      const u=users[o.user_id]||{};
+      const name  = u.name  || o.customer_name  || '—';
+      const email = u.email || o.customer_email || '';
+      const rushHtml = o.is_rush
+        ? o.rush_approved
+          ? `<span style="color:var(--ok);font-size:10px;font-weight:700;">⚡ Approved</span>`
+          : `<span style="color:var(--warn);font-size:10px;font-weight:700;cursor:pointer;" onclick="openRushModal(${o.id})">⚡ Pending ▸</span>`
+        : '—';
+      return `<tr style="cursor:pointer;" onclick="window.location='admin-order-detail.html?id=${o.id}'">
+        <td><strong>${o.order_number||o.id}</strong></td>
+        <td><strong>${name}</strong><br/><span style="font-size:11px;color:var(--txt-m);">${email}</span></td>
+        <td>${o.item_type||'—'}</td>
+        <td style="font-size:12px;text-transform:capitalize;">${o.pricing_tier||'—'}</td>
+        <td onclick="event.stopPropagation()">${rushHtml}</td>
+        <td>${o.booking_fee_paid?'<span style="color:var(--ok);font-size:11px;font-weight:700;">✔ Paid</span>':'<span style="color:var(--warn);font-size:11px;">Unpaid</span>'}</td>
+        <td>${formatDate(o.must_have_by)}</td>
+        <td>${formatDate(o.created_at)}</td>
+        <td onclick="event.stopPropagation()">${statusBadge(o.status)}</td>
+        <td onclick="event.stopPropagation()">
+          <a href="admin-order-detail.html?id=${o.id}" class="btn btn-out btn-sm">View</a>
+        </td>
+      </tr>`;
+    }).join('');
+    document.getElementById('pgInfo').textContent=`Showing ${start+1}–${Math.min(start+PER,filtered.length)} of ${filtered.length}`;
+    document.getElementById('prevBtn').disabled=page===1;
+    document.getElementById('nextBtn').disabled=start+PER>=filtered.length;
+  }
+
+  function renderArchived(){
+    const start=(page-1)*PER;
+    const slice=filtered.slice(start,start+PER);
+    const tbody=document.getElementById('tBody');
+    if(!slice.length){
+      tbody.innerHTML=`<tr><td colspan="7"><div class="empty"><div class="empty-icon">🗃</div><div class="empty-txt">No archived orders yet.</div></div></td></tr>`;
+      document.getElementById('pgInfo').textContent='';
+      document.getElementById('prevBtn').disabled=true;
+      document.getElementById('nextBtn').disabled=true;
+      return;
+    }
+    tbody.innerHTML=slice.map(o=>{
+      const u=users[o.user_id]||{};
+      const name  = u.name  || o.customer_name  || '—';
+      const email = u.email || o.customer_email || '';
+      return `<tr style="cursor:pointer;opacity:0.85;" onclick="window.location='admin-order-detail.html?id=${o.id}'">
+        <td><strong>${o.order_number||o.id}</strong></td>
+        <td><strong>${name}</strong><br/><span style="font-size:11px;color:var(--txt-m);">${email}</span></td>
+        <td>${o.item_type||'—'}</td>
+        <td style="font-size:12px;text-transform:capitalize;">${o.pricing_tier||'—'}</td>
+        <td onclick="event.stopPropagation()">${statusBadge(o.status)}</td>
+        <td style="font-size:12px;color:var(--txt-m);">${formatDate(o.archived_at)||'—'}</td>
+        <td onclick="event.stopPropagation()">
+          <a href="admin-order-detail.html?id=${o.id}" class="btn btn-out btn-sm">View</a>
+        </td>
+      </tr>`;
+    }).join('');
+    document.getElementById('pgInfo').textContent=`Showing ${start+1}–${Math.min(start+PER,filtered.length)} of ${filtered.length} archived`;
+    document.getElementById('prevBtn').disabled=page===1;
+    document.getElementById('nextBtn').disabled=start+PER>=filtered.length;
+  }
+
+  function pg(dir){
+    page+=dir;
+    currentTab==='archived' ? renderArchived() : render();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  function openRushModal(id){
+    const o = activeOrders.find(x=>x.id===id);
+    if (!o) return;
+    const u = users[o.user_id]||{};
+    document.getElementById('modalTitle').textContent = `Rush Approval — Order #${id}`;
+    document.getElementById('modalBody').innerHTML = `
+      <div style="background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:16px;margin-bottom:18px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;font-size:13px;">
+          <div><div class="fl">Customer</div><div>${u.name||o.customer_name||'—'}</div></div>
+          <div><div class="fl">Item</div><div>${o.item_type}</div></div>
+          <div><div class="fl">Must Have By</div><div style="color:var(--warn);">${formatDate(o.must_have_by)||'Not specified'}</div></div>
+          <div><div class="fl">Rush Fee</div><div style="color:var(--gld);">50% of custom fee</div></div>
+        </div>
+        <div style="margin-top:12px;font-size:12px;color:var(--txt-m);">${o.customer_notes||'No notes.'}</div>
+      </div>
+      <div class="fg"><label class="fl">Admin Note (optional)</label><textarea class="fc" id="rushNote" rows="3" placeholder="Add a note about this approval/denial..."></textarea></div>
+      <div style="display:flex;gap:10px;margin-top:4px;">
+        <button class="btn btn-mg" onclick="approveRush(${id},true)" style="flex:1;justify-content:center;">✔ Approve Rush</button>
+        <button class="btn btn-err" onclick="approveRush(${id},false)" style="flex:1;justify-content:center;">✕ Deny</button>
+      </div>`;
+    document.getElementById('statusModal').classList.add('open');
+  }
+
+  function approveRush(id, approved){
+    const o = activeOrders.find(x=>x.id===id);
+    if (o) { o.rush_approved = approved; if(!approved) o.is_rush = false; }
+    showToast(approved ? '⚡ Rush order approved!' : 'Rush request denied.');
+    closeModal(); filter();
+  }
+
+  function closeModal(){ document.getElementById('statusModal').classList.remove('open'); }
+
+</script>
+</body>
+</html>

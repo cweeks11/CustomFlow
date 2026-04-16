@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Settings — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!--
+  PAGE: Admin Settings (admin-settings.html)
+  ============================================================
+  PURPOSE:
+    Store configuration and preferences for Buffy. The most important
+    section is Booking & Availability — this controls what customers
+    see on the public landing page about Buffy's availability.
+
+  WHAT'S ON THIS PAGE (accordion sections):
+    1. General Settings    — business name, contact info, timezone
+    2. Booking & Availability — booking status, booked-until date,
+                                production start date, banner message
+                                (saves to localStorage, read by landing.html)
+    3. User Management     — add/remove admin and employee accounts
+    4. Notification Settings — toggle email notification types
+    5. FAQ Management      — edit, add, remove FAQ items (saves to MOCK.faqs)
+    6. Pricing Tiers       — display-only view of pricing (edit in core.js)
+
+  KEY FUNCTIONS:
+    toggleAcc(head)   — opens/closes accordion sections, ensures only one
+                        is open at a time
+    buildBooking(el)  — renders the booking form, pre-fills from localStorage
+    saveBooking()     — saves booking status values to localStorage so
+                        landing.html and customer-terms.html update immediately
+    buildFaqs(el)     — renders editable FAQ list from MOCK.faqs
+    renderFaqEdit()   — re-renders the FAQ edit list after add/remove
+    saveFaqs()        — writes edited FAQs back to MOCK.faqs
+    buildUsers(el)    — renders admin/employee user table
+    openAddUser()     — modal for creating a new admin user
+
+  IMPORTANT — BOOKING STATUS FLOW:
+    Admin changes status here → saved to localStorage →
+    getBookingStatus() in core.js reads it →
+    landing.html banner updates automatically on next load
+    In production: also save to a settings table via PATCH /api/settings/booking
+
+  BACKEND TODO:
+    saveBooking()  → PATCH /api/settings/booking
+    saveFaqs()     → PUT /api/faqs (array of {q, a} objects)
+    addUser()      → POST /api/users  { name, email, role, password }
+    removeUser()   → DELETE /api/users/:id
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+
+<div class="page">
+  <div class="page-head">
+    <div><div class="page-title">Settings</div><div class="page-sub">Store configuration and preferences</div></div>
+  </div>
+
+  <div id="accWrap"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+
+  requireAdminAuth();
+  renderAdminNav('admin-settings.html');
+
+  // Build accordions
+  const sections = [
+    { id:'general',    icon:'⚙️', label:'General Settings',         fn:buildGeneral    },
+    { id:'booking',    icon:'📅', label:'Booking & Availability',   fn:buildBooking    },
+    { id:'influencer', icon:'⭐', label:'Influencer Approvals',     fn:buildInfluencer },
+    { id:'users',      icon:'👥', label:'User Management',          fn:buildUsers      },
+    { id:'faqs',       icon:'❓', label:'FAQ Management',           fn:buildFaqs       },
+    { id:'pricing',    icon:'💰', label:'Items & Pricing',          fn:buildPricing    },
+    { id:'howitworks', icon:'🪜', label:'How It Works',             fn:buildHowItWorks },
+  ];
+
+  document.getElementById('accWrap').innerHTML = sections.map((s,i)=>`
+    <div class="acc-item">
+      <div class="acc-head${i===0?' open':''}" onclick="toggleAcc(this)" id="ah-${s.id}">
+        <div style="display:flex;align-items:center;gap:10px;"><span>${s.icon}</span>${s.label}</div>
+        <span class="acc-arr">▾</span>
+      </div>
+      <div class="acc-body${i===0?' open':''}" id="ab-${s.id}">
+        <div id="ab-inner-${s.id}">Loading...</div>
+      </div>
+    </div>`).join('');
+
+
+  function toggleAcc(head) {
+    const isOpen = head.classList.contains('open');
+    document.querySelectorAll('.acc-head').forEach(h=>h.classList.remove('open'));
+    document.querySelectorAll('.acc-body').forEach(b=>b.classList.remove('open'));
+    if(!isOpen) {
+      head.classList.add('open');
+      head.nextElementSibling.classList.add('open');
+    }
+  }
+
+  function saved(btnId) {
+    const el=document.getElementById(btnId);
+    if(!el) return;
+    const orig=el.textContent;
+    el.textContent='✔ Saved!'; el.style.color='var(--ok)';
+    setTimeout(()=>{ el.textContent=orig; el.style.color=''; },3000);
+  }
+
+  // ---- GENERAL ----
+  async function buildGeneral(el) {
+    // Load current logged-in admin's data from localStorage first, then refresh from API
+    let user = JSON.parse(localStorage.getItem('admin_user') || '{}');
+    const meRes = await apiFetch('/api/users/me');
+    if (meRes && meRes.ok) {
+      user = meRes.data;
+      localStorage.setItem('admin_user', JSON.stringify(user));
+    }
+    const bizName = localStorage.getItem('biz_name') || 'Cope Aesthetic Customs';
+    const savedTz = localStorage.getItem('biz_timezone') || 'America/New_York (EST)';
+    const savedLang = localStorage.getItem('biz_language') || 'English';
+    const tzOptions = ['America/New_York (EST)', 'America/Chicago (CST)', 'America/Los_Angeles (PST)'];
+    const langOptions = ['English', 'Spanish'];
+    el.innerHTML = `
+      <div class="g2" style="margin-bottom:16px;">
+        <div class="fg"><label class="fl">Business Name</label><input type="text" class="fc" id="bizName" value="${bizName.replace(/"/g,'&quot;')}"/></div>
+        <div class="fg"><label class="fl">Owner Name</label><input type="text" class="fc" id="ownerName" value="${(user.name||'').replace(/"/g,'&quot;')}"/></div>
+        <div class="fg"><label class="fl">Contact Email</label><input type="email" class="fc" id="bizEmail" value="${(user.email||'').replace(/"/g,'&quot;')}"/></div>
+        <div class="fg"><label class="fl">Phone / WhatsApp</label><input type="text" class="fc" id="bizPhone" value="${(user.phone||'').replace(/"/g,'&quot;')}"/></div>
+        <div class="fg"><label class="fl">Timezone</label>
+          <select class="fc" id="tz">
+            ${tzOptions.map(o=>`<option${o===savedTz?' selected':''}>${o}</option>`).join('')}
+          </select>
+        </div>
+        <div class="fg"><label class="fl">Language</label>
+          <select class="fc" id="lang">
+            ${langOptions.map(o=>`<option${o===savedLang?' selected':''}>${o}</option>`).join('')}
+          </select>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-gld" onclick="saveGeneral()">Save Changes</button>
+        <span id="genSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+        <span id="genErr" style="font-size:12px;color:var(--err);display:none;"></span>
+      </div>
+    `;
+  }
+
+  async function saveGeneral() {
+    const name    = document.getElementById('ownerName').value.trim();
+    const email   = document.getElementById('bizEmail').value.trim();
+    const phone   = document.getElementById('bizPhone').value.trim();
+    const bizName = document.getElementById('bizName').value.trim();
+    const tz      = document.getElementById('tz').value;
+    const lang    = document.getElementById('lang').value;
+    const svEl    = document.getElementById('genSv');
+    const errEl   = document.getElementById('genErr');
+    errEl.style.display = 'none';
+
+    if (!name || !email) {
+      errEl.textContent = 'Name and email are required.';
+      errEl.style.display = 'inline';
+      return;
+    }
+
+    // Persist business-level settings to localStorage
+    localStorage.setItem('biz_name', bizName);
+    localStorage.setItem('biz_timezone', tz);
+    localStorage.setItem('biz_language', lang);
+
+    // Save user profile (name, email, phone) via admin PATCH endpoint
+    const currentUser = JSON.parse(localStorage.getItem('admin_user') || '{}');
+    if (!currentUser.id) { showToast('Session error — please log in again', 'error'); return; }
+
+    const res = await apiFetch('/api/users/' + currentUser.id, {
+      method: 'PATCH',
+      body: JSON.stringify({ name, email, phone }),
+    });
+
+    if (res && res.ok) {
+      localStorage.setItem('admin_user', JSON.stringify({ ...currentUser, ...res.data }));
+      svEl.style.display = 'inline';
+      setTimeout(() => svEl.style.display = 'none', 3000);
+      showToast('General settings saved!');
+    } else {
+      errEl.textContent = (res && res.data && res.data.error) || 'Save failed.';
+      errEl.style.display = 'inline';
+      showToast('Save failed', 'error');
+    }
+  }
+
+  // ---- BOOKING ----
+  async function buildBooking(el) {
+    // Load from real API, fall back to localStorage
+    let bs = { status:'waitlist', until:'2026-05-18', message:'', prod_start:'May 18, 2026' };
+    try {
+      const res = await apiFetch('/api/settings/booking');
+      if (res && res.ok) bs = res.data;
+    } catch(e) {}
+    el.innerHTML = `
+      <div style="padding:14px;background:rgba(242,23,165,0.05);border:1px solid rgba(242,23,165,0.12);border-radius:8px;margin-bottom:20px;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--mg);margin-bottom:6px;">Live on landing page</div>
+        <div style="font-size:13px;color:var(--txt-m);">This section controls what customers see on the public landing page about your availability.</div>
+      </div>
+      <div class="g2" style="margin-bottom:16px;">
+        <div class="fg">
+          <label class="fl">Booking Status</label>
+          <select class="fc" id="bkStatus">
+            <option value="open"     ${bs.status==='open'    ?'selected':''}>🟢 Open — Accepting Orders</option>
+            <option value="waitlist" ${bs.status==='waitlist'?'selected':''}>🟡 Waitlist Only</option>
+            <option value="booked"   ${bs.status==='booked'  ?'selected':''}>🔴 Fully Booked — Not Accepting</option>
+          </select>
+        </div>
+        <div class="fg">
+          <label class="fl">Booked Until Date</label>
+          <input type="date" class="fc" id="bkUntil" value="${bs.until||'2026-05-18'}"/>
+        </div>
+        <div class="fg">
+          <label class="fl">Current Production Start Date</label>
+          <input type="text" class="fc" id="bkProdStart" value="${bs.prod_start||'May 18, 2026'}" placeholder="e.g. May 18, 2026"/>
+        </div>
+        <div class="fg">
+          <label class="fl">Custom Banner Message</label>
+          <input type="text" class="fc" id="bkMsg" value="${bs.message||''}" placeholder="e.g. Currently booked through May 18..."/>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-gld" onclick="saveBooking()">Save & Update Landing Page</button>
+        <span id="bkSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved! Landing page updated.</span>
+      </div>`;
+  }
+
+  async function saveBooking() {
+    const status   = document.getElementById('bkStatus').value;
+    const until    = document.getElementById('bkUntil').value;
+    const message  = document.getElementById('bkMsg').value;
+    const prod_start = document.getElementById('bkProdStart').value;
+    const res = await apiFetch('/api/settings/booking', {
+      method: 'PATCH',
+      body: JSON.stringify({ status, until, message, prod_start })
+    });
+    // Also save to localStorage as fallback
+    localStorage.setItem('booking_status',  status);
+    localStorage.setItem('booked_until',    until);
+    localStorage.setItem('booking_message', message);
+    localStorage.setItem('prod_start',      prod_start);
+    const el=document.getElementById('bkSv');
+    if (res && res.ok) {
+      el.style.display='inline'; setTimeout(()=>el.style.display='none',4000);
+      showToast('Booking status updated!');
+    } else {
+      showToast('Save failed', 'error');
+    }
+  }
+
+  // ---- INFLUENCER APPROVALS ----
+  async function buildInfluencer(el) {
+    el.innerHTML = `<div style="padding:20px;text-align:center;color:var(--txt-m);">Loading...</div>`;
+    const res = await apiFetch('/api/users/influencer-pending');
+    const pending = (res && res.ok) ? (res.data || []) : [];
+
+    if (!pending.length) {
+      el.innerHTML = `
+        <div style="text-align:center;padding:30px;">
+          <div style="font-size:32px;margin-bottom:10px;">⭐</div>
+          <div style="font-size:14px;color:var(--txt-m);">No pending influencer requests right now.</div>
+        </div>`;
+      return;
+    }
+
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;line-height:1.6;">
+        These customers have requested influencer status. Review their profiles and approve or deny below.
+      </div>
+      <div id="influencerList">
+        ${pending.map(u => `
+          <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;padding:16px;border:1px solid var(--b1);border-radius:8px;margin-bottom:10px;" id="inf_${u.id}">
+            <div>
+              <div style="font-size:14px;font-weight:700;color:var(--txt);">${u.name}</div>
+              <div style="font-size:12px;color:var(--txt-m);">${u.email} · ${u.phone||'No phone'}</div>
+              <div style="font-size:11px;color:var(--txt-d);margin-top:3px;">Joined ${formatDate(u.created_at)}</div>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn btn-mg btn-sm" onclick="reviewInfluencer(${u.id}, true)">✔ Approve</button>
+              <button class="btn btn-err btn-sm" onclick="reviewInfluencer(${u.id}, false)">✕ Deny</button>
+            </div>
+          </div>`).join('')}
+      </div>`;
+  }
+
+  async function reviewInfluencer(userId, approved) {
+    const res = await apiFetch(`/api/users/${userId}/influencer-approval`, {
+      method: 'POST',
+      body: JSON.stringify({ approved })
+    });
+    if (res && res.ok) {
+      const card = document.getElementById('inf_' + userId);
+      if (card) {
+        card.style.opacity = '0.4';
+        card.style.pointerEvents = 'none';
+        card.innerHTML += `<div style="font-size:12px;font-weight:700;color:${approved?'var(--ok)':'var(--err)'};">${approved?'✔ Approved':'✕ Denied'}</div>`;
+      }
+      showToast(approved ? '⭐ Influencer approved!' : 'Request denied.');
+    } else {
+      showToast('Failed to update — please try again.', 'error');
+    }
+  }
+
+  // ---- USERS ----
+  async function buildUsers(el) {
+    let users = [];
+    const usersRes = await apiFetch('/api/users');
+    if (usersRes && usersRes.ok) users = usersRes.data || [];
+    el.innerHTML = `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:14px;">
+        <button class="btn btn-mg btn-sm" onclick="openAddUser()">+ Add Admin User</button>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Phone</th><th>Joined</th><th>Active</th><th>Actions</th></tr></thead>
+          <tbody>
+            ${users.map(u=>`<tr>
+              <td><strong>${u.name}</strong></td>
+              <td style="font-size:12px;color:var(--txt-m);">${u.email}</td>
+              <td><span style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:${u.role==='owner'?'var(--gld)':u.role==='employee'?'var(--chr)':'var(--txt-m)'};">${u.role}</span></td>
+              <td style="font-size:12px;color:var(--txt-m);">${u.phone||'—'}</td>
+              <td style="font-size:12px;color:var(--txt-m);">${formatDate(u.created_at)}</td>
+              <td><span style="font-size:11px;font-weight:700;color:${u.is_active!==false?'var(--ok)':'var(--err)'};">${u.is_active!==false?'Active':'Inactive'}</span></td>
+              <td style="display:flex;gap:6px;">
+                <button class="btn btn-out btn-sm" onclick="openEditUser(${u.id})">Edit</button>
+                <button class="btn btn-err btn-sm" onclick="removeUser(${u.id})" ${u.role==='owner'?'disabled':''}>Remove</button>
+              </td>
+            </tr>`).join('')}
+          </tbody>
+        </table>
+      </div>`;
+  }
+
+  function openEditUser(userId) {
+    // Find user from the already-loaded list by re-fetching
+    apiFetch('/api/users/' + userId).then(res => {
+      if (!res || !res.ok) { showToast('Could not load user', 'error'); return; }
+      const u = res.data;
+      const existing = document.getElementById('editUserModal');
+      if (existing) existing.remove();
+      const modal = document.createElement('div');
+      modal.className = 'overlay open';
+      modal.id = 'editUserModal';
+      modal.innerHTML = `<div class="modal" style="max-width:500px;">
+        <button class="modal-x" onclick="document.getElementById('editUserModal').remove()">✕</button>
+        <div class="modal-title">Edit User</div>
+        <div style="font-size:12px;color:var(--txt-d);margin-bottom:16px;">${u.email}</div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Full Name</label><input type="text" class="fc" id="euName" value="${u.name||''}"/></div>
+          <div class="fg"><label class="fl">Phone</label><input type="tel" class="fc" id="euPhone" value="${u.phone||''}"/></div>
+        </div>
+        <div class="fg"><label class="fl">Email</label><input type="email" class="fc" id="euEmail" value="${u.email||''}"/></div>
+        <div class="g2">
+          <div class="fg"><label class="fl">Role</label>
+            <select class="fc" id="euRole">
+              <option value="customer" ${u.role==='customer'?'selected':''}>Customer</option>
+              <option value="employee" ${u.role==='employee'?'selected':''}>Employee</option>
+              <option value="owner" ${u.role==='owner'?'selected':''}>Owner</option>
+            </select>
+          </div>
+          <div class="fg"><label class="fl">Account Status</label>
+            <select class="fc" id="euActive">
+              <option value="true" ${u.is_active!==false?'selected':''}>Active</option>
+              <option value="false" ${u.is_active===false?'selected':''}>Inactive (blocked)</option>
+            </select>
+          </div>
+        </div>
+        <div class="fg"><label class="fl">Account Type</label>
+          <select class="fc" id="euType">
+            <option value="individual" ${(u.customer_type||'individual')==='individual'?'selected':''}>Individual</option>
+            <option value="influencer" ${u.customer_type==='influencer'?'selected':''}>Influencer</option>
+            <option value="group" ${u.customer_type==='group'?'selected':''}>Group / Collective</option>
+            <option value="nonprofit" ${u.customer_type==='nonprofit'?'selected':''}>Non-Profit</option>
+            <option value="organization" ${u.customer_type==='organization'?'selected':''}>Organization</option>
+          </select>
+        </div>
+        <div class="fg"><label class="fl">New Password <span style="color:var(--txt-d);font-weight:400;">(leave blank to keep current)</span></label>
+          <input type="password" class="fc" id="euPw" placeholder="••••••••"/>
+        </div>
+        <div style="display:flex;gap:10px;margin-top:16px;">
+          <button class="btn btn-gld" style="flex:1;justify-content:center;" onclick="saveEditUser(${u.id})">Save Changes</button>
+          <button class="btn btn-out" style="justify-content:center;" onclick="document.getElementById('editUserModal').remove()">Cancel</button>
+        </div>
+        <span id="euSaveMsg" style="display:none;font-size:12px;margin-top:10px;text-align:center;"></span>
+      </div>`;
+      document.body.appendChild(modal);
+    });
+  }
+
+  async function saveEditUser(userId) {
+    const name      = document.getElementById('euName').value.trim();
+    const phone     = document.getElementById('euPhone').value.trim();
+    const email     = document.getElementById('euEmail').value.trim();
+    const role      = document.getElementById('euRole').value;
+    const is_active = document.getElementById('euActive').value === 'true';
+    const customer_type = document.getElementById('euType').value;
+    const newPw     = document.getElementById('euPw').value;
+    const msg       = document.getElementById('euSaveMsg');
+
+    if (!name || !email) {
+      msg.style.display = 'block'; msg.style.color = 'var(--err)';
+      msg.textContent = 'Name and email are required.'; return;
+    }
+
+    const body = { name, phone, email, role, is_active, customer_type };
+    const res = await apiFetch('/api/users/' + userId, {
+      method: 'PATCH',
+      body: JSON.stringify(body),
+    });
+
+    if (!res || !res.ok) {
+      msg.style.display = 'block'; msg.style.color = 'var(--err)';
+      msg.textContent = (res && res.data && res.data.error) || 'Failed to save.'; return;
+    }
+
+    // If a new password was entered, change it via the admin endpoint
+    if (newPw) {
+      if (newPw.length < 6) {
+        msg.style.display = 'block'; msg.style.color = 'var(--err)';
+        msg.textContent = 'Password must be at least 6 characters.'; return;
+      }
+      const pwRes = await apiFetch('/api/users/' + userId + '/set-password', {
+        method: 'POST',
+        body: JSON.stringify({ new_password: newPw }),
+      });
+      if (!pwRes || !pwRes.ok) {
+        msg.style.display = 'block'; msg.style.color = 'var(--warn)';
+        msg.textContent = 'Profile saved but password update failed.'; return;
+      }
+    }
+
+    showToast('User updated!');
+    document.getElementById('editUserModal').remove();
+    buildUsers(document.getElementById('ab-inner-users'));
+  }
+
+  function openAddUser() {
+    const existing = document.getElementById('userModal');
+    if (existing) existing.remove();
+    const modal = document.createElement('div');
+    modal.className = 'overlay open';
+    modal.id = 'userModal';
+    modal.innerHTML = `<div class="modal">
+      <button class="modal-x" onclick="document.getElementById('userModal').remove()">✕</button>
+      <div class="modal-title">Add User</div>
+      <div class="g2">
+        <div class="fg"><label class="fl">Full Name</label><input type="text" class="fc" id="uName" placeholder="Jane Doe"/></div>
+        <div class="fg"><label class="fl">Phone</label><input type="tel" class="fc" id="uPhone" placeholder="(919) 555-0000"/></div>
+      </div>
+      <div class="fg"><label class="fl">Email</label><input type="email" class="fc" id="uEmail" placeholder="jane@copeaesthetic.com"/></div>
+      <div class="fg"><label class="fl">Role</label>
+        <select class="fc" id="uRole">
+          <option value="customer">Customer</option>
+          <option value="employee">Employee</option>
+          <option value="owner">Owner</option>
+        </select>
+      </div>
+      <div class="fg"><label class="fl">Password</label><input type="password" class="fc" id="uPw" placeholder="Min. 6 characters"/></div>
+      <button class="btn btn-mg" style="width:100%;justify-content:center;margin-top:8px;" onclick="addUser()">Create User</button>
+      <span id="uAddMsg" style="display:none;font-size:12px;margin-top:10px;text-align:center;color:var(--err);"></span>
+    </div>`;
+    document.body.appendChild(modal);
+  }
+
+  async function addUser() {
+    const name  = document.getElementById('uName').value.trim();
+    const phone = document.getElementById('uPhone').value.trim();
+    const email = document.getElementById('uEmail').value.trim();
+    const role  = document.getElementById('uRole').value;
+    const pw    = document.getElementById('uPw').value;
+    const msg   = document.getElementById('uAddMsg');
+
+    if (!name || !email || !pw) {
+      msg.style.display = 'block'; msg.textContent = 'Name, email, and password are required.'; return;
+    }
+    if (pw.length < 6) {
+      msg.style.display = 'block'; msg.textContent = 'Password must be at least 6 characters.'; return;
+    }
+
+    const res = await apiFetch('/api/admin/create-user', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, phone, password: pw, role, notify_email: true }),
+    });
+
+    if (res && res.ok) {
+      // If not customer, patch the role (register always creates customer)
+      if (role !== 'customer') {
+        await apiFetch('/api/users/' + res.data.user.id, {
+          method: 'PATCH',
+          body: JSON.stringify({ role }),
+        });
+      }
+      showToast('User created!');
+      document.getElementById('userModal').remove();
+      buildUsers(document.getElementById('ab-inner-users'));
+    } else {
+      msg.style.display = 'block';
+      msg.textContent = (res && res.data && res.data.error) || 'Failed to create user.';
+    }
+  }
+
+  async function removeUser(id) {
+    if (!confirm('Permanently remove this user? This cannot be undone.')) return;
+    const res = await apiFetch('/api/users/' + id, { method: 'DELETE' });
+    if (res && res.ok) {
+      showToast('User removed.');
+      buildUsers(document.getElementById('ab-inner-users'));
+    } else {
+      showToast((res && res.data && res.data.error) || 'Failed to remove user.', 'error');
+    }
+  }
+
+  // ---- FAQS ----
+  let faqs = [];
+
+  async function buildFaqs(el) {
+    // Always reload from server when opening the panel
+    const res = await apiFetch('/api/faqs');
+    faqs = (res && res.ok && Array.isArray(res.data)) ? res.data : [];
+    // Normalise: API returns {id, question, answer} — keep id for PATCH/DELETE
+    faqs = faqs.map(f => ({ id: f.id || null, q: f.question || f.q || '', a: f.answer || f.a || '' }));
+
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">These FAQs appear on the customer Terms &amp; FAQs page and Customer Portal.</div>
+      <div id="faqEdit"></div>
+      <button class="btn btn-out btn-sm" style="margin-top:10px;" onclick="addFaq()">+ Add FAQ</button>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-gld" onclick="saveFaqs()">Save FAQs</button>
+        <span id="faqSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+        <span id="faqErr" style="font-size:12px;color:var(--err);display:none;"></span>
+      </div>`;
+    renderFaqEdit();
+  }
+
+  function renderFaqEdit() {
+    const el = document.getElementById('faqEdit');
+    if (!el) return;
+    el.innerHTML = faqs.map((f, i) => `
+      <div style="background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:14px;margin-bottom:10px;">
+        <div class="fg" style="margin-bottom:10px;">
+          <label class="fl">Question ${i + 1}</label>
+          <input type="text" class="fc" value="${(f.q||'').replace(/"/g,'&quot;')}" oninput="faqs[${i}].q=this.value"/>
+        </div>
+        <div class="fg" style="margin-bottom:8px;">
+          <label class="fl">Answer</label>
+          <textarea class="fc" rows="2" oninput="faqs[${i}].a=this.value">${f.a||''}</textarea>
+        </div>
+        <button class="btn btn-err btn-sm" onclick="removeFaq(${i})">Remove</button>
+      </div>`).join('') || '<div style="font-size:13px;color:var(--txt-d);">No FAQs yet. Click "+ Add FAQ" to create one.</div>';
+  }
+
+  function addFaq() { faqs.push({ id: null, q: '', a: '' }); renderFaqEdit(); }
+
+  function removeFaq(i) { faqs.splice(i, 1); renderFaqEdit(); }
+
+  async function saveFaqs() {
+    const svEl  = document.getElementById('faqSv');
+    const errEl = document.getElementById('faqErr');
+    errEl.style.display = 'none';
+
+    // Fetch current server state to diff against
+    const currentRes = await apiFetch('/api/faqs');
+    const current = (currentRes && currentRes.ok && Array.isArray(currentRes.data)) ? currentRes.data : [];
+    const currentIds = new Set(current.map(f => f.id));
+
+    // IDs that still exist in the edited list
+    const keepIds = new Set(faqs.filter(f => f.id).map(f => f.id));
+
+    // 1. Delete removed FAQs
+    for (const f of current) {
+      if (!keepIds.has(f.id)) {
+        await apiFetch(`/api/faqs/${f.id}`, { method: 'DELETE' });
+      }
+    }
+
+    // 2. Update existing / create new, preserving order via sort_order
+    for (let i = 0; i < faqs.length; i++) {
+      const f = faqs[i];
+      if (!f.q.trim()) continue; // skip blanks
+      const body = { question: f.q.trim(), answer: f.a.trim(), sort_order: i };
+      if (f.id && currentIds.has(f.id)) {
+        // PATCH existing
+        const r = await apiFetch(`/api/faqs/${f.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+        if (r && r.ok) { faqs[i].id = r.data.id; }
+      } else {
+        // POST new
+        const r = await apiFetch('/api/faqs', { method: 'POST', body: JSON.stringify(body) });
+        if (r && r.ok) { faqs[i].id = r.data.id; }
+      }
+    }
+
+    svEl.style.display = 'inline';
+    setTimeout(() => svEl.style.display = 'none', 3000);
+    showToast('FAQs saved!');
+  }
+
+// ---- ITEMS & PRICING ----
+  let allItems = [];
+
+  async function buildPricing(el) {
+    const res = await apiFetch('/api/items/all');
+    allItems = (res && res.ok && Array.isArray(res.data)) ? res.data : [];
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">Manage the items Buffy customizes and the pricing tiers for each one.</div>
+      <button class="btn btn-out btn-sm" style="margin-bottom:16px;" onclick="addItem()">+ Add Item</button>
+      <div id="itemsEditor"></div>`;
+    renderItemsEditor();
+  }
+
+  function renderItemsEditor() {
+    const el = document.getElementById('itemsEditor');
+    if (!el) return;
+    if (!allItems.length) {
+      el.innerHTML = '<div style="font-size:13px;color:var(--txt-d);">No items yet. Click "+ Add Item" to create one.</div>';
+      return;
+    }
+    el.innerHTML = allItems.map((item, i) => `
+      <div style="background:var(--s2);border:1px solid var(--b1);border-radius:10px;padding:16px;margin-bottom:14px;">
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px;">
+          <div class="fg" style="width:70px;flex-shrink:0;">
+            <label class="fl">Icon</label>
+            <input type="text" class="fc" value="${item.icon||'✨'}" maxlength="4" oninput="allItems[${i}].icon=this.value" style="text-align:center;font-size:20px;"/>
+          </div>
+          <div class="fg" style="flex:1;">
+            <label class="fl">Item Name</label>
+            <input type="text" class="fc" value="${(item.label||'').replace(/"/g,'&quot;')}" oninput="allItems[${i}].label=this.value"/>
+          </div>
+          <div style="display:flex;gap:8px;margin-top:20px;flex-shrink:0;">
+            <button class="btn btn-gld btn-sm" onclick="saveItem(${i})">Save</button>
+            <button class="btn btn-err btn-sm" onclick="deleteItem(${i})">Remove</button>
+          </div>
+        </div>
+        <div style="margin-left:4px;">
+          <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:var(--txt-m);margin-bottom:8px;">Pricing Tiers</div>
+          ${(item.tiers||[]).map((t, j) => `
+          <div style="background:var(--s1);border:1px solid var(--b1);border-radius:8px;padding:12px;margin-bottom:8px;display:flex;gap:8px;align-items:flex-start;">
+            <div class="fg" style="flex:1;min-width:80px;">
+              <label class="fl">Tier Name</label>
+              <input type="text" class="fc" value="${(t.name||'').replace(/"/g,'&quot;')}" oninput="allItems[${i}].tiers[${j}].name=this.value"/>
+            </div>
+            <div class="fg" style="flex:1;min-width:80px;">
+              <label class="fl">Price</label>
+              <input type="text" class="fc" value="${(t.price_label||'').replace(/"/g,'&quot;')}" placeholder="e.g. $150+" oninput="allItems[${i}].tiers[${j}].price_label=this.value"/>
+            </div>
+            <div class="fg" style="flex:2;">
+              <label class="fl">Description</label>
+              <input type="text" class="fc" value="${(t.description||'').replace(/"/g,'&quot;')}" oninput="allItems[${i}].tiers[${j}].description=this.value"/>
+            </div>
+            <div style="display:flex;gap:6px;margin-top:20px;flex-shrink:0;">
+              <button class="btn btn-gld btn-sm" onclick="saveTier(${i},${j})">Save</button>
+              <button class="btn btn-err btn-sm" onclick="deleteTier(${i},${j})">✕</button>
+            </div>
+          </div>`).join('')}
+          <button class="btn btn-out btn-sm" style="margin-top:4px;" onclick="addTier(${i})">+ Add Tier</button>
+        </div>
+      </div>`).join('');
+  }
+
+  async function addItem() {
+    const r = await apiFetch('/api/items', { method: 'POST', body: JSON.stringify({ icon: '✨', label: 'New Item', sort_order: allItems.length }) });
+    if (r && r.ok) { allItems.push(r.data); renderItemsEditor(); }
+    else showToast('Failed to add item.', 'error');
+  }
+
+  async function saveItem(i) {
+    const item = allItems[i];
+    if (!item.label.trim()) { showToast('Item name required.', 'error'); return; }
+    const r = await apiFetch(`/api/items/${item.id}`, { method: 'PATCH', body: JSON.stringify({ icon: item.icon, label: item.label.trim(), sort_order: i }) });
+    if (r && r.ok) { allItems[i] = { ...r.data, tiers: allItems[i].tiers }; showToast('Item saved!'); renderItemsEditor(); }
+    else showToast('Failed to save item.', 'error');
+  }
+
+  async function deleteItem(i) {
+    const item = allItems[i];
+    if (!confirm(`Remove "${item.label}" and all its pricing tiers? This cannot be undone.`)) return;
+    const r = await apiFetch(`/api/items/${item.id}`, { method: 'DELETE' });
+    if (r && r.ok) { allItems.splice(i, 1); renderItemsEditor(); showToast('Item removed.'); }
+    else showToast('Failed to remove item.', 'error');
+  }
+
+  async function addTier(i) {
+    const item = allItems[i];
+    const r = await apiFetch(`/api/items/${item.id}/tiers`, { method: 'POST', body: JSON.stringify({ name: 'New Tier', price_label: '', description: '', sort_order: (item.tiers||[]).length }) });
+    if (r && r.ok) { allItems[i].tiers = allItems[i].tiers || []; allItems[i].tiers.push(r.data); renderItemsEditor(); }
+    else showToast('Failed to add tier.', 'error');
+  }
+
+  async function saveTier(i, j) {
+    const item = allItems[i];
+    const tier = item.tiers[j];
+    if (!tier.name.trim()) { showToast('Tier name required.', 'error'); return; }
+    const r = await apiFetch(`/api/items/${item.id}/tiers/${tier.id}`, { method: 'PATCH', body: JSON.stringify({ name: tier.name.trim(), price_label: tier.price_label||'', description: tier.description||'', sort_order: j }) });
+    if (r && r.ok) { allItems[i].tiers[j] = r.data; showToast('Tier saved!'); renderItemsEditor(); }
+    else showToast('Failed to save tier.', 'error');
+  }
+
+  async function deleteTier(i, j) {
+    const item = allItems[i];
+    const tier = item.tiers[j];
+    if (!confirm(`Remove tier "${tier.name}"?`)) return;
+    const r = await apiFetch(`/api/items/${item.id}/tiers/${tier.id}`, { method: 'DELETE' });
+    if (r && r.ok) { allItems[i].tiers.splice(j, 1); renderItemsEditor(); showToast('Tier removed.'); }
+    else showToast('Failed to remove tier.', 'error');
+  }
+  
+  // Init — called after all functions defined
+  sections.forEach(s => {
+    if (s.fn.constructor.name === "AsyncFunction") {
+      s.fn(document.getElementById(`ab-inner-${s.id}`));
+    } else {
+      s.fn(document.getElementById(`ab-inner-${s.id}`));
+    }
+  });
+  
+  // ---- HOW IT WORKS ----
+  let howSteps = [];
+
+  async function buildHowItWorks(el) {
+    const res = await apiFetch('/api/how-it-works');
+    howSteps = (res && res.ok && Array.isArray(res.data)) ? res.data : [];
+    el.innerHTML = `
+      <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;">These steps appear in the "How It Works" section on the landing page.</div>
+      <div id="howEdit"></div>
+      <button class="btn btn-out btn-sm" style="margin-top:10px;" onclick="addHowStep()">+ Add Step</button>
+      <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-gld" onclick="saveHowSteps()">Save Steps</button>
+        <span id="howSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+        <span id="howErr" style="font-size:12px;color:var(--err);display:none;"></span>
+      </div>`;
+    renderHowEdit();
+  }
+
+  function renderHowEdit() {
+    const el = document.getElementById('howEdit');
+    if (!el) return;
+    el.innerHTML = howSteps.map((s, i) => `
+      <div style="background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:14px;margin-bottom:10px;">
+        <div style="display:flex;gap:10px;margin-bottom:10px;">
+          <div class="fg" style="width:80px;flex-shrink:0;">
+            <label class="fl">Step #</label>
+            <input type="number" class="fc" value="${s.step_number||i+1}" oninput="howSteps[${i}].step_number=+this.value"/>
+          </div>
+          <div class="fg" style="flex:1;">
+            <label class="fl">Title</label>
+            <input type="text" class="fc" value="${(s.title||'').replace(/"/g,'&quot;')}" oninput="howSteps[${i}].title=this.value"/>
+          </div>
+        </div>
+        <div class="fg" style="margin-bottom:8px;">
+          <label class="fl">Description</label>
+          <textarea class="fc" rows="2" oninput="howSteps[${i}].description=this.value">${s.description||''}</textarea>
+        </div>
+        <button class="btn btn-err btn-sm" onclick="removeHowStep(${i})">Remove</button>
+      </div>`).join('') || '<div style="font-size:13px;color:var(--txt-d);">No steps yet. Click "+ Add Step" to create one.</div>';
+  }
+
+  function addHowStep() {
+    howSteps.push({ id: null, step_number: howSteps.length + 1, title: '', description: '' });
+    renderHowEdit();
+  }
+
+  function removeHowStep(i) { howSteps.splice(i, 1); renderHowEdit(); }
+
+  async function saveHowSteps() {
+    const svEl  = document.getElementById('howSv');
+    const errEl = document.getElementById('howErr');
+    errEl.style.display = 'none';
+
+    const currentRes = await apiFetch('/api/how-it-works');
+    const current    = (currentRes && currentRes.ok && Array.isArray(currentRes.data)) ? currentRes.data : [];
+    const currentIds = new Set(current.map(s => s.id));
+    const keepIds    = new Set(howSteps.filter(s => s.id).map(s => s.id));
+
+    // Delete removed steps
+    for (const s of current) {
+      if (!keepIds.has(s.id)) await apiFetch(`/api/how-it-works/${s.id}`, { method: 'DELETE' });
+    }
+
+    // Update existing / create new
+    for (let i = 0; i < howSteps.length; i++) {
+      const s = howSteps[i];
+      if (!s.title.trim()) continue;
+      const body = { step_number: s.step_number, title: s.title.trim(), description: s.description.trim(), sort_order: i };
+      if (s.id && currentIds.has(s.id)) {
+        const r = await apiFetch(`/api/how-it-works/${s.id}`, { method: 'PATCH', body: JSON.stringify(body) });
+        if (r && r.ok) howSteps[i].id = r.data.id;
+      } else {
+        const r = await apiFetch('/api/how-it-works', { method: 'POST', body: JSON.stringify(body) });
+        if (r && r.ok) howSteps[i].id = r.data.id;
+      }
+    }
+
+    svEl.style.display = 'inline';
+    setTimeout(() => svEl.style.display = 'none', 3000);
+  }
+</script>
+</body>
+</html>

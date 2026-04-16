@@ -1,0 +1,349 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Settings — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!--
+  PAGE: Customer Settings (customer-settings.html)
+  ============================================================
+  PURPOSE:
+    Account management for customers. Update profile info,
+    notification preferences, account type, and password.
+
+  WHAT'S ON THIS PAGE:
+    1. Profile — first name, last name, email, phone, shipping address
+    2. Notification preferences — email updates, mockup alerts, shipping alerts
+    3. Account type — individual, influencer, group, nonprofit, organization
+    4. Change password — current + new + confirm
+    5. Danger zone — sign out, request account deletion
+    6. Contact shortcuts — email and phone links to reach Buffy
+
+  KEY FUNCTIONS:
+    saveProfile()     — PATCH /api/users/me { name, phone, notify_email }
+    saveNotifs()      — PATCH /api/users/me { notify_email }
+    saveAccountType() — PATCH /api/users/me { customer_type }
+    changePassword()  — POST /api/change-password { current_password, new_password }
+    doLogout()        — calls logout() from core.js
+    delAccount()      — POST /api/account/delete-request
+
+  ON LOAD:
+    Pre-fills from localStorage immediately, then fetches fresh from API.
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+<script>requireCustomerAuth(); renderCustomerNav('customer-settings.html');</script>
+
+<div class="page page-sm">
+  <div class="page-head">
+    <div>
+      <div class="page-title">Account <span>Settings</span></div>
+      <div class="page-sub">Manage your profile and preferences</div>
+    </div>
+  </div>
+
+  <!-- PROFILE -->
+  <div class="card" style="margin-bottom:18px;">
+    <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--chr);"></span>Profile Information</div></div>
+    <div class="g2">
+      <div class="fg"><label class="fl">First Name</label><input type="text" class="fc" id="fn" placeholder="First name"/></div>
+      <div class="fg"><label class="fl">Last Name</label><input type="text" class="fc" id="ln" placeholder="Last name"/></div>
+      <div class="fg"><label class="fl">Email Address</label><input type="email" class="fc" id="email" placeholder="you@email.com"/></div>
+      <div class="fg"><label class="fl">Phone Number</label><input type="tel" class="fc" id="phone" placeholder="(803) 555-0000"/></div>
+    </div>
+    <div class="fg">
+      <label class="fl">Shipping Address (optional)</label>
+      <input type="text" class="fc" id="addr" placeholder="123 Main St, Columbia, SC 29201"/>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+      <button class="btn btn-gld" onclick="saveProfile()">Save Profile</button>
+      <span id="profSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+    </div>
+  </div>
+
+  <!-- NOTIFICATIONS -->
+  <div class="card" style="margin-bottom:18px;">
+    <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--vio-l);"></span>Notification Preferences</div></div>
+    <div class="tog-row"><span class="tog-lbl">Email updates on order status</span><label class="toggle"><input type="checkbox" id="notifEmail" checked/><span class="tslider"></span></label></div>
+    <div class="tog-row"><span class="tog-lbl">Mockup ready for review</span><label class="toggle"><input type="checkbox" id="notifMockup" checked/><span class="tslider"></span></label></div>
+    <div class="tog-row"><span class="tog-lbl">Shipping notifications</span><label class="toggle"><input type="checkbox" id="notifShip" checked/><span class="tslider"></span></label></div>
+    <div style="margin-top:14px;display:flex;align-items:center;gap:12px;">
+      <button class="btn btn-gld" onclick="saveNotifs()">Save</button>
+      <span id="notifSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+    </div>
+  </div>
+
+  <!-- ACCOUNT TYPE -->
+  <div class="card" style="margin-bottom:18px;" id="accountTypeCard">
+    <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--mg);"></span>Account Type</div></div>
+    <div style="font-size:13px;color:var(--txt-m);margin-bottom:16px;line-height:1.6;">
+      Select the type that best describes you. Some account types unlock special pricing and perks — Buffy reviews influencer requests before they're approved.
+    </div>
+    <div id="acctTypeOptions" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;"></div>
+    <div id="influencerPending" style="display:none;padding:12px 14px;background:rgba(232,160,32,0.08);border:1px solid rgba(232,160,32,0.25);border-radius:8px;margin-bottom:14px;">
+      <div style="font-size:12px;font-weight:700;color:var(--warn);margin-bottom:4px;">⏳ Pending Buffy's Approval</div>
+      <div style="font-size:12px;color:var(--txt-m);">Your influencer account request has been submitted. Buffy will review it shortly. Changed your mind? Select a different type and save.</div>
+    </div>
+    <div id="influencerApproved" style="display:none;padding:12px 14px;background:rgba(46,204,113,0.08);border:1px solid rgba(46,204,113,0.25);border-radius:8px;margin-bottom:14px;">
+      <div style="font-size:12px;font-weight:700;color:var(--ok);margin-bottom:4px;">✅ Influencer Status Approved</div>
+      <div style="font-size:12px;color:var(--txt-m);">Buffy has approved your influencer account. You may be eligible for special pricing on future orders.</div>
+    </div>
+    <div id="influencerDenied" style="display:none;padding:12px 14px;background:rgba(231,76,60,0.08);border:1px solid rgba(231,76,60,0.2);border-radius:8px;margin-bottom:14px;">
+      <div style="font-size:12px;font-weight:700;color:var(--err);margin-bottom:4px;">✕ Influencer Request Not Approved</div>
+      <div style="font-size:12px;color:var(--txt-m);">Your influencer request wasn't approved this time. You can reach out to Buffy directly if you have questions.</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="btn btn-gld" onclick="saveAccountType()">Save Account Type</button>
+      <span id="acctTypeSv" style="font-size:12px;color:var(--ok);display:none;">✔ Saved!</span>
+    </div>
+  </div>
+
+  <!-- CHANGE PASSWORD -->
+  <div class="card" style="margin-bottom:18px;">
+    <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Change Password</div></div>
+    <div class="fg"><label class="fl">Current Password</label><input type="password" class="fc" id="curPw" placeholder="••••••••"/></div>
+    <div class="g2">
+      <div class="fg"><label class="fl">New Password</label><input type="password" class="fc" id="newPw" placeholder="Min. 6 characters"/></div>
+      <div class="fg"><label class="fl">Confirm New Password</label><input type="password" class="fc" id="confPw" placeholder="••••••••"/></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px;margin-top:8px;">
+      <button class="btn btn-gld" onclick="changePassword()">Update Password</button>
+      <span id="pwSv" style="font-size:12px;display:none;"></span>
+    </div>
+  </div>
+
+  <!-- DANGER ZONE -->
+  <div class="card" style="border-color:rgba(231,76,60,0.15);margin-bottom:18px;">
+    <div class="card-head"><div class="card-title" style="color:var(--err);">Danger Zone</div></div>
+    <div style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">
+      <button class="btn btn-err btn-sm" onclick="doLogout()">Sign Out of All Devices</button>
+      <button class="btn btn-err btn-sm" onclick="delAccount()" style="opacity:0.7;">Request Account Deletion</button>
+    </div>
+  </div>
+
+  <!-- CONTACT -->
+  <div style="text-align:center;padding:20px 0;border-top:1px solid var(--b1);">
+    <div style="font-size:11px;color:var(--txt-d);margin-bottom:10px;">Need help? Contact Buffy directly.</div>
+    <div style="display:flex;gap:10px;justify-content:center;flex-wrap:wrap;">
+      <a href="mailto:CopeAestheticCustoms@gmail.com" class="btn btn-out btn-sm">📧 Email</a>
+      <a href="tel:9192952569" class="btn btn-out btn-sm">📞 (919) 295-2569</a>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let user = {};
+
+  // Pre-fill form immediately from localStorage — never blank on load
+  (function prefill() {
+    const cached = JSON.parse(localStorage.getItem('customer_user') || '{}');
+    if (cached.name || cached.email) {
+      const parts = (cached.name || '').split(' ');
+      document.getElementById('fn').value    = parts[0] || '';
+      document.getElementById('ln').value    = parts.slice(1).join(' ') || '';
+      document.getElementById('email').value = cached.email || '';
+      if (cached.phone) document.getElementById('phone').value = cached.phone;
+      if (cached.notify_email === false) document.getElementById('notifEmail').checked = false;
+    }
+  })();
+
+  // Build account type radio options immediately — no API needed
+  const ACCT_TYPES = [
+    { val: 'individual',   label: 'Individual',            desc: 'Standard pricing — perfect for personal custom orders' },
+    { val: 'influencer',   label: '⭐ Influencer',         desc: "Content creator pricing — requires Buffy's approval" },
+    { val: 'group',        label: '👥 Group / Collective', desc: 'Ordering for a team, squad, or group event' },
+    { val: 'nonprofit',    label: '🤝 Non-Profit',         desc: 'Non-profit or charity organization' },
+    { val: 'organization', label: '🏢 Organization',       desc: 'Business, brand, or corporate entity' },
+  ];
+  document.getElementById('acctTypeOptions').innerHTML = ACCT_TYPES.map(t =>
+    '<label style="display:flex;align-items:center;gap:12px;padding:12px 14px;border:1px solid var(--b1);border-radius:8px;cursor:pointer;transition:border-color 0.2s;" id="typeOpt_' + t.val + '">' +
+      '<input type="radio" name="acctType" value="' + t.val + '" style="accent-color:var(--mg);width:16px;height:16px;" onchange="onTypeChange(\'' + t.val + '\')">' +
+      '<div>' +
+        '<div style="font-size:13px;font-weight:700;color:var(--txt);">' + t.label + '</div>' +
+        '<div style="font-size:11px;color:var(--txt-m);">' + t.desc + '</div>' +
+      '</div>' +
+    '</label>'
+  ).join('');
+
+  // Fetch fresh user data from API and update everything in place
+  (async () => {
+    const res = await apiFetch('/api/users/me');
+    if (res && res.ok && res.data) {
+      user = res.data;
+      localStorage.setItem('customer_user', JSON.stringify(user));
+    } else {
+      user = JSON.parse(localStorage.getItem('customer_user') || '{}');
+    }
+    const parts = (user.name || '').split(' ');
+    document.getElementById('fn').value    = parts[0] || '';
+    document.getElementById('ln').value    = parts.slice(1).join(' ') || '';
+    document.getElementById('email').value = user.email || '';
+    if (user.phone) document.getElementById('phone').value = user.phone;
+    if (user.notify_email === false) document.getElementById('notifEmail').checked = false;
+    initAccountType();
+  })();
+
+  function initAccountType() {
+    const currentType   = user.customer_type || 'individual';
+    const currentStatus = user.influencer_status;
+    const typeRadio = document.querySelector('input[name="acctType"][value="' + currentType + '"]');
+    if (typeRadio) typeRadio.checked = true;
+    highlightSelected(currentType);
+    if (currentType === 'influencer') {
+      if (currentStatus === 'pending')  document.getElementById('influencerPending').style.display  = 'block';
+      if (currentStatus === 'approved') document.getElementById('influencerApproved').style.display = 'block';
+      if (currentStatus === 'denied')   document.getElementById('influencerDenied').style.display   = 'block';
+    }
+  }
+
+  function highlightSelected(type) {
+    document.querySelectorAll('[id^="typeOpt_"]').forEach(el => {
+      el.style.borderColor = 'var(--b1)';
+      el.style.background  = '';
+    });
+    const sel = document.getElementById('typeOpt_' + type);
+    if (sel) {
+      sel.style.borderColor = 'var(--mg)';
+      sel.style.background  = 'rgba(242,23,165,0.04)';
+    }
+  }
+
+  function onTypeChange(type) {
+    highlightSelected(type);
+    ['influencerPending','influencerApproved','influencerDenied'].forEach(id => {
+      document.getElementById(id).style.display = 'none';
+    });
+    if (type === 'influencer') {
+      const currentStatus = user.influencer_status;
+      if (currentStatus === 'pending')  document.getElementById('influencerPending').style.display  = 'block';
+      if (currentStatus === 'approved') document.getElementById('influencerApproved').style.display = 'block';
+      if (currentStatus === 'denied')   document.getElementById('influencerDenied').style.display   = 'block';
+    }
+  }
+
+  async function saveAccountType() {
+    const selected = document.querySelector('input[name="acctType"]:checked');
+    if (!selected) return;
+    const newType = selected.value;
+    const result = await apiFetch('/api/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ customer_type: newType }),
+    });
+    if (result && result.ok) {
+      user = { ...user, customer_type: newType, influencer_status: result.data.influencer_status };
+      localStorage.setItem('customer_user', JSON.stringify(user));
+      ['influencerPending','influencerApproved','influencerDenied'].forEach(id => {
+        document.getElementById(id).style.display = 'none';
+      });
+      if (newType === 'influencer') {
+        const status = result.data.influencer_status;
+        if (status === 'pending') {
+          showToast('Influencer request submitted! Redirecting...');
+          setTimeout(() => window.location.href = 'customer-pending.html', 1200);
+          return;
+        }
+        if (status === 'approved') { document.getElementById('influencerApproved').style.display = 'block'; showToast('Influencer status confirmed!'); }
+        if (status === 'denied')   { document.getElementById('influencerDenied').style.display   = 'block'; showToast('Request not approved.', 'error'); }
+      } else {
+        showToast('Account type saved!');
+      }
+      const el = document.getElementById('acctTypeSv');
+      el.style.display = 'inline';
+      setTimeout(() => el.style.display = 'none', 3000);
+    } else {
+      showToast('Failed to save account type', 'error');
+    }
+  }
+
+  async function saveProfile() {
+    const fn   = document.getElementById('fn').value.trim();
+    const ln   = document.getElementById('ln').value.trim();
+    const name = (fn + ' ' + ln).trim();
+    const phone = document.getElementById('phone').value.trim();
+    const notify_email = document.getElementById('notifEmail').checked;
+    const result = await apiFetch('/api/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ name, phone, notify_email }),
+    });
+    const el = document.getElementById('profSv');
+    if (result && result.ok) {
+      user = { ...user, name, phone, notify_email };
+      localStorage.setItem('customer_user', JSON.stringify(user));
+      el.style.display = 'inline';
+      setTimeout(() => el.style.display = 'none', 3000);
+      showToast('Profile saved!');
+    } else {
+      showToast('Failed to save profile', 'error');
+    }
+  }
+
+  async function saveNotifs() {
+    const notify_email = document.getElementById('notifEmail').checked;
+    const result = await apiFetch('/api/users/me', {
+      method: 'PATCH',
+      body: JSON.stringify({ notify_email }),
+    });
+    const el = document.getElementById('notifSv');
+    el.style.display = 'inline';
+    setTimeout(() => el.style.display = 'none', 3000);
+    if (result && result.ok) {
+      showToast('Notification preferences saved!');
+    } else {
+      showToast('Failed to save preferences', 'error');
+    }
+  }
+
+  async function changePassword() {
+    const cur  = document.getElementById('curPw').value;
+    const nw   = document.getElementById('newPw').value;
+    const conf = document.getElementById('confPw').value;
+    const el   = document.getElementById('pwSv');
+    el.style.display = 'none';
+    if (!cur || !nw) {
+      el.style.display = 'inline'; el.style.color = 'var(--err)'; el.textContent = 'Fill in all fields.'; return;
+    }
+    if (nw !== conf) {
+      el.style.display = 'inline'; el.style.color = 'var(--err)'; el.textContent = 'Passwords do not match.'; return;
+    }
+    if (nw.length < 6) {
+      el.style.display = 'inline'; el.style.color = 'var(--err)'; el.textContent = 'Min. 6 characters.'; return;
+    }
+    const result = await apiFetch('/api/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ current_password: cur, new_password: nw }),
+    });
+    if (result && result.ok) {
+      el.style.display = 'inline'; el.style.color = 'var(--ok)'; el.textContent = '✔ Password updated!';
+      document.getElementById('curPw').value  = '';
+      document.getElementById('newPw').value  = '';
+      document.getElementById('confPw').value = '';
+      setTimeout(() => el.style.display = 'none', 3000);
+      showToast('Password updated!');
+    } else {
+      el.style.display = 'inline'; el.style.color = 'var(--err)';
+      el.textContent = (result && result.data && result.data.error) || 'Failed to update password.';
+    }
+  }
+
+  function doLogout() {
+    logout();
+  }
+
+  function delAccount() {
+    if (!confirm('Request account deletion? This will send a deletion request to Buffy. Your data will not be removed immediately.')) return;
+    apiFetch('/api/account/delete-request', { method: 'POST' }).then(r => {
+      if (r && r.ok) {
+        showToast('Deletion request sent. Buffy will follow up with you.');
+      } else {
+        showToast('Failed to send request — email Buffy directly at CopeAestheticCustoms@gmail.com', 'error');
+      }
+    });
+  }
+</script>
+</body>
+</html>

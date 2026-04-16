@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Track Order — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!--
+  PAGE: Customer Order Tracking (customer-track.html)
+  ============================================================
+  PURPOSE:
+    Quick status lookup page. Customers can search by order number
+    or tracking number to see the pipeline state and shipping info
+    without navigating through the full portal.
+
+  WHAT'S ON THIS PAGE:
+    1. Search box — accepts order # (e.g. "1047") or a tracking number
+    2. Quick-link buttons — one per customer order for fast access
+    3. Results — pipeline bar, inbound/outbound tracking numbers, timeline
+
+  KEY FUNCTIONS:
+    doSearch()    — searches MOCK.orders by id or tracking number,
+                    calls showOrder() with the matching order's ID
+    showOrder(id) — builds the full tracking result card for a given order
+
+  AUTO-LOAD:
+    If the URL has ?id=1047, that order is shown immediately.
+    If no ID in URL, defaults to showing the customer's most recent order.
+
+  BACKEND TODO:
+    doSearch()    → GET /api/orders/search?q=1047
+    showOrder()   → GET /api/orders/:id  (returns order + status_history)
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+
+<div class="page page-sm">
+  <div class="page-head">
+    <div><div class="page-title">Track <span>Your Order</span></div><div class="page-sub">Search by order number or tracking number</div></div>
+  </div>
+
+  <div class="card" style="margin-bottom:22px;">
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <input type="text" class="fc" id="searchIn" placeholder="Order #1047 or UPS/USPS tracking number..."
+        style="flex:1;min-width:200px;" onkeydown="if(event.key==='Enter')doSearch()"/>
+      <button class="btn btn-mg" onclick="doSearch()">Search</button>
+    </div>
+    <div style="margin-top:10px;font-size:12px;color:var(--txt-d);">Or jump to one of your orders:</div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:8px;" id="quickLinks"></div>
+  </div>
+
+  <div id="result"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+
+  requireCustomerAuth();
+  const user = JSON.parse(localStorage.getItem('customer_user')||'{}');
+  renderCustomerNav('customer-track.html');
+
+  let myOrders = [];
+
+  const pip = ['free_waitlist','paid_waitlist','production_queue','prep','painting','completed','shipped','closed'];
+
+  function doSearch() {
+    const q = document.getElementById('searchIn').value.trim().replace('#','');
+    if (!q) { showToast('Enter an order number or tracking number.','warning'); return; }
+    const byId  = myOrders.find(o => String(o.id) === q);
+    const byTrk = myOrders.find(o => o.inbound_tracking === q || o.outbound_tracking === q);
+    const found = byId || byTrk;
+    if (found) {
+      showOrder(found.id);
+    } else {
+      document.getElementById('result').innerHTML =
+        `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-txt">No order found for "#${q}"</div></div>`;
+    }
+  }
+
+  async function showOrder(id) {
+    const o = myOrders.find(x => x.id === id);
+    if (!o) return;
+    const pidx = pip.indexOf(o.status);
+
+    // Load full detail (status history, tracking) from API
+    const detailRes = await customerApiFetch('/api/orders/' + id);
+    const hist = detailRes && detailRes.ok ? (detailRes.data.status_history || []) : [];
+
+    document.getElementById('result').innerHTML = `
+      <div class="card" style="margin-bottom:18px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;margin-bottom:16px;">
+          <div>
+            <div style="font-size:11px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--txt-m);">Order #${o.id}</div>
+            <div style="font-size:22px;font-weight:700;letter-spacing:1px;text-transform:uppercase;">${o.item_type}</div>
+          </div>
+          ${statusBadge(o.status)}
+        </div>
+        <div class="pipeline">
+          <div class="pip-track">
+            ${pip.map((s,i)=>`
+              <div style="display:flex;align-items:center;flex-shrink:0;">
+                <div class="pip-node ${i<pidx?'past':i===pidx?'active':'future'}">${STATUSES[s].label}</div>
+                ${i<pip.length-1?`<div class="pip-conn ${i<pidx?'past':'future'}"></div>`:''}
+              </div>`).join('')}
+          </div>
+        </div>
+      </div>
+
+      <div class="g2" style="margin-bottom:18px;">
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Inbound — Your Item to Buffy</div>
+          <div class="track-num ${o.inbound_tracking?'':'empty'}">${o.inbound_tracking||'Not yet entered'}</div>
+        </div>
+        <div class="card">
+          <div class="card-title" style="margin-bottom:12px;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;">Outbound — Return Shipping</div>
+          <div class="track-num ${o.outbound_tracking?'':'empty'}">${o.outbound_tracking||'Not shipped yet'}</div>
+          ${o.outbound_carrier?`<div style="font-size:11px;color:var(--txt-d);margin-top:3px;">${o.outbound_carrier}</div>`:''}
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title" style="margin-bottom:12px;"><span class="card-dot"></span>Order Timeline</div>
+        ${hist.length ? hist.map(h=>`
+          <div style="display:flex;gap:12px;align-items:flex-start;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px;">
+            <div style="width:6px;height:6px;border-radius:50%;background:var(--mg);flex-shrink:0;margin-top:5px;"></div>
+            <div>
+              <span style="color:var(--txt-m);">${STATUSES[h.from_status]?.label||h.from_status} → </span>
+              <strong>${STATUSES[h.to_status]?.label||h.to_status}</strong>
+              ${h.note?`<div style="font-size:12px;color:var(--txt-m);margin-top:2px;">${h.note}</div>`:''}
+            </div>
+            <div style="margin-left:auto;font-size:11px;color:var(--txt-d);white-space:nowrap;">${formatDate(h.changed_at)}</div>
+          </div>`).join('') : '<div style="font-size:13px;color:var(--txt-d);">No updates yet.</div>'}
+        <div style="margin-top:14px;">
+          <a href="customer-order-detail.html?id=${o.id}" class="btn btn-out btn-sm">View Full Order Details →</a>
+        </div>
+      </div>`;
+  }
+
+  async function loadPage() {
+    const ordersRes = await customerApiFetch('/api/orders');
+    if (ordersRes && ordersRes.ok) myOrders = ordersRes.data || [];
+
+    // Quick-link buttons for each order
+    document.getElementById('quickLinks').innerHTML = myOrders.map(o =>
+      `<button class="btn btn-ghost btn-sm" onclick="showOrder(${o.id})">#${o.id}</button>`
+    ).join('');
+
+    // Auto-load order from URL param, or show the most recent one
+    const p = new URLSearchParams(location.search);
+    if (p.get('id'))        showOrder(parseInt(p.get('id')));
+    else if (myOrders.length) showOrder(myOrders[0].id);
+  }
+
+  loadPage();
+
+</script>
+</body>
+</html>

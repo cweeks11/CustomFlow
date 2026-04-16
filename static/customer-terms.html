@@ -1,0 +1,309 @@
+<!--
+  PAGE: Customer Terms, FAQs & Pricing (customer-terms.html)
+  ============================================================
+  PURPOSE:
+    The mandatory reading gate before account creation (PRD Feature 1).
+    Customers MUST scroll through the entire page before the
+    "I agree" checkbox unlocks and the "Create Account" button activates.
+
+  WHAT'S ON THIS PAGE:
+    1. Sticky reading progress bar — shows % scrolled through the document
+    2. Terms & Conditions — all sale, refund, revision, and care policies
+    3. Pricing Tiers — pulled from MOCK.pricing (populated dynamically)
+    4. Current Production Start Date — pulled from getBookingStatus()
+    5. FAQ accordion — pulled from MOCK.faqs (same as customer portal)
+    6. Contact information
+    7. Sticky agree bar (fixed to bottom) — checkbox + "Create Account" button
+
+  SCROLL PROGRESS LOGIC:
+    updatePct()  — calculates (scrollY / maxScrollY) × 100 as the read percentage.
+                   Fires on scroll, resize, and a 400ms interval as a fallback
+                   for browsers that don't always fire scroll events reliably.
+    unlock()     — called when progress reaches 90%. Sets hasRead=true,
+                   updates the lock message, and allows the checkbox to be checked.
+    forceUnlock() — manual "I've read it all" escape hatch button for users
+                    whose browsers behave unusually with scroll detection.
+    toggleAgree() — only works after hasRead=true. Toggles the agreed state
+                    and enables/disables the proceed button.
+    proceed()     — sets sessionStorage 'terms_agreed' = 'true' and redirects
+                    to customer-register.html. sessionStorage is used (not
+                    localStorage) so the gate resets each browser session.
+
+  LOCK OVERLAY:
+    If a user tries to check the agree box before finishing, a modal
+    pops up reminding them to keep reading.
+
+  BACKEND TODO:
+    Pricing       → GET /api/pricing   (replace MOCK.pricing)
+    FAQs          → GET /api/faqs      (replace MOCK.faqs)
+    Booking date  → GET /api/settings/booking  (replace getBookingStatus())
+  ============================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Terms, FAQs & Pricing — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <style>
+    .terms-wrap{max-width:760px;margin:0 auto;padding:calc(var(--nav) + 28px) 28px 160px;}
+    .terms-hero{text-align:center;padding:32px 0 36px;border-bottom:1px solid var(--b1);margin-bottom:36px;}
+    .terms-title{font-size:30px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;}
+    .terms-sub{font-family:var(--fb);font-style:italic;font-size:17px;color:var(--txt-m);line-height:1.6;}
+    /* READING PROGRESS */
+    .read-bar{position:sticky;top:var(--nav);z-index:50;background:rgba(13,13,13,0.95);padding:10px 0 8px;border-bottom:1px solid var(--b1);margin-bottom:32px;backdrop-filter:blur(8px);}
+    .read-bar-labels{display:flex;justify-content:space-between;font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--txt-m);margin-bottom:6px;}
+    .read-track{height:3px;background:var(--b1);border-radius:2px;overflow:hidden;}
+    .read-fill{height:100%;background:linear-gradient(to right,var(--mg),var(--vio-l));border-radius:2px;width:0%;transition:width 0.15s;}
+    /* DOC SECTIONS */
+    .doc-sec{margin-bottom:40px;}
+    .doc-sec-title{font-size:14px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:14px;padding-bottom:10px;border-bottom:1px solid var(--b1);display:flex;align-items:center;gap:8px;}
+    .doc-sec-title .dot{width:6px;height:6px;border-radius:50%;background:var(--mg);flex-shrink:0;}
+    .doc-p{font-family:var(--fb);font-size:17px;color:var(--txt-m);line-height:1.8;margin-bottom:12px;}
+    .doc-p strong{color:var(--txt);}
+    .doc-ul{list-style:none;margin:0 0 16px;}
+    .doc-ul li{font-family:var(--fb);font-size:17px;color:var(--txt-m);line-height:1.8;padding:6px 0 6px 18px;position:relative;border-bottom:1px solid var(--b1);}
+    .doc-ul li:last-child{border-bottom:none;}
+    .doc-ul li::before{content:"—";position:absolute;left:0;color:var(--mg);}
+    /* PRICING CARDS */
+    .price-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;}
+    .price-card{background:var(--s2);border:1px solid var(--b1);border-radius:8px;padding:16px;}
+    .price-tier{font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt);margin-bottom:4px;}
+    .price-amt{font-size:22px;font-weight:700;color:var(--gld);margin-bottom:6px;}
+    .price-desc{font-size:12px;color:var(--txt-m);line-height:1.5;}
+    /* STICKY AGREE BAR */
+    .agree-bar{position:fixed;bottom:0;left:0;right:0;background:rgba(13,13,13,0.97);border-top:1px solid var(--b1);padding:14px 28px;z-index:100;backdrop-filter:blur(8px);}
+    .agree-inner{max-width:760px;margin:0 auto;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+    .agree-left{display:flex;align-items:flex-start;gap:12px;}
+    .cb-wrap{width:22px;height:22px;border:2px solid var(--b2);border-radius:4px;display:flex;align-items:center;justify-content:center;cursor:pointer;transition:all 0.2s;flex-shrink:0;margin-top:1px;}
+    .cb-wrap.on{background:var(--mg);border-color:var(--mg);}
+    .agree-txt{font-size:12px;color:var(--txt-m);line-height:1.5;}
+    .agree-right{display:flex;flex-direction:column;align-items:flex-end;gap:6px;}
+    .lock-msg{font-size:10px;color:var(--txt-d);letter-spacing:1px;}
+    /* LOCK MODAL */
+    .lock-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.8);z-index:300;align-items:center;justify-content:center;backdrop-filter:blur(6px);}
+    .lock-overlay.show{display:flex;}
+    .lock-box{background:var(--s1);border:1px solid var(--b1);border-radius:12px;padding:36px;text-align:center;max-width:380px;width:90%;}
+  </style>
+</head>
+<body>
+<nav class="nav">
+  <div class="nav-logo"><img src="logo_white_transparent.png" alt="Cope Aesthetic Customs" style="height:36px;width:auto;mix-blend-mode:lighten;"/></div>
+  <div class="nav-links"></div>
+  <div class="nav-right"><a href="landing.html" class="btn btn-out btn-sm">← Back to Home</a></div>
+</nav>
+
+<div class="terms-wrap">
+  <div class="terms-hero">
+    <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--mg);margin-bottom:12px;">Before You Continue</div>
+    <div class="terms-title">Terms, FAQs & Pricing</div>
+    <div class="terms-sub">Please read everything below carefully.<br/>You must scroll through the full page before creating your account.</div>
+  </div>
+
+  <!-- READING PROGRESS (sticky) -->
+  <div class="read-bar">
+    <div class="read-bar-labels"><span>Reading Progress</span><span id="pctLbl">0%</span></div>
+    <div class="read-track"><div class="read-fill" id="readFill"></div></div>
+  </div>
+
+  <!-- TERMS & CONDITIONS -->
+  <div class="doc-sec">
+    <div class="doc-sec-title"><span class="dot"></span>Terms & Conditions</div>
+    <div class="doc-p"><strong>Last updated: March 2026</strong></div>
+    <div class="doc-p">By creating an account and placing an order with Cope Aesthetic Customs, you agree to the following terms. Every piece created is one-of-one and made specifically for you.</div>
+
+    <div class="doc-sec-title" style="font-size:12px;border:none;padding:0;margin-bottom:8px;margin-top:20px;"><span class="dot" style="background:var(--gld);"></span>All Sales Are Final</div>
+    <div class="doc-p"><strong>All sales are final. No returns, exchanges, or refunds</strong> will be issued once work has begun. Contact Buffy before approving your quote if you have concerns.</div>
+
+    <div class="doc-sec-title" style="font-size:12px;border:none;padding:0;margin-bottom:8px;margin-top:20px;"><span class="dot" style="background:var(--gld);"></span>Waitlist & Payment Process</div>
+    <ul class="doc-ul">
+      <li>After submitting your order questionnaire, you are placed on the <strong>Free Waitlist</strong>.</li>
+      <li>Pay the <strong>non-refundable booking fee ($50)</strong> to move to the <strong>Paid Waitlist</strong> and secure your spot.</li>
+      <li>Full invoice payment is required to enter the <strong>Production Queue</strong> and begin work.</li>
+      <li>Rush orders require Buffy's approval. Rush fee = 50% of custom fee.</li>
+      <li>Failure to pay the remaining balance within 30 days of completion may result in forfeiture of the item.</li>
+    </ul>
+
+    <div class="doc-sec-title" style="font-size:12px;border:none;padding:0;margin-bottom:8px;margin-top:20px;"><span class="dot" style="background:var(--gld);"></span>Shipping & Item Condition</div>
+    <ul class="doc-ul">
+      <li>Customers are responsible for shipping their item to Buffy safely using insured, tracked shipping.</li>
+      <li>Cope Aesthetic Customs is not responsible for items lost or damaged in transit <em>to</em> us.</li>
+      <li>A <strong>cleaning fee ($25)</strong> applies to pre-loved items that require cleaning before painting.</li>
+      <li>Your completed item will be shipped back via insured, tracked service.</li>
+    </ul>
+
+    <div class="doc-sec-title" style="font-size:12px;border:none;padding:0;margin-bottom:8px;margin-top:20px;"><span class="dot" style="background:var(--gld);"></span>Design, Mockups & Revisions</div>
+    <ul class="doc-ul">
+      <li><strong>Up to 3 free revisions</strong> are included. Additional revisions require payment ($20 each) before proceeding.</li>
+      <li>Once you approve a mockup and painting begins, no further design changes can be made.</li>
+      <li>Buffy reserves the right to use completed work in her portfolio unless you request otherwise in writing.</li>
+      <li>We do not reproduce copyrighted logos or trademarked characters without authorization.</li>
+    </ul>
+
+    <div class="doc-sec-title" style="font-size:12px;border:none;padding:0;margin-bottom:8px;margin-top:20px;"><span class="dot" style="background:var(--gld);"></span>Care Instructions</div>
+    <div class="doc-p">All painted items must be hand washed in cold water and air dried — never put in a dryer or exposed to direct heat. Improper care voids any warranty.</div>
+
+    <div class="doc-sec-title" style="font-size:12px;border:none;padding:0;margin-bottom:8px;margin-top:20px;"><span class="dot" style="background:var(--gld);"></span>Privacy</div>
+    <div class="doc-p">Your personal information is used solely to process your order. We do not sell or share your data with third parties. Order photos may appear in Buffy's portfolio unless you opt out in writing.</div>
+  </div>
+
+  <div class="div-gld"></div>
+
+  <!-- PRICING TIERS -->
+  <div class="doc-sec">
+    <div class="doc-sec-title"><span class="dot" style="background:var(--gld);"></span>Pricing</div>
+    <div class="doc-p">All pricing is custom — final quotes depend on design complexity, item type, and timeline. Select your item on the order form to see its pricing tiers.</div>
+    <div id="pricingGrid"></div>
+    <div style="margin-top:12px;padding:12px 14px;background:rgba(232,160,32,0.07);border:1px solid rgba(232,160,32,0.2);border-radius:6px;font-size:13px;color:var(--txt-m);">
+      <strong>Current Production Start Date:</strong> <span id="prodStartDate" style="color:var(--gld);">May 18, 2026</span>
+    </div>
+  </div>
+
+  <div class="div-gld"></div>
+
+  <!-- FAQs -->
+  <div class="doc-sec">
+    <div class="doc-sec-title"><span class="dot" style="background:var(--chr);"></span>Frequently Asked Questions</div>
+    <div id="faqList"></div>
+  </div>
+
+  <div class="div-gld"></div>
+
+  <!-- CONTACT -->
+  <div class="doc-sec" style="margin-bottom:60px;">
+    <div class="doc-sec-title"><span class="dot" style="background:var(--vio-l);"></span>Questions?</div>
+    <div class="doc-p"><strong>Email:</strong> CopeAestheticCustoms@gmail.com<br/><strong>Phone / WhatsApp:</strong> (919) 295-2569<br/><strong>Waitlist:</strong> customs.waitlist@CopeAesthetic.Studio</div>
+  </div>
+</div>
+
+<!-- STICKY AGREE BAR -->
+<div class="agree-bar">
+  <div class="agree-inner">
+    <div class="agree-left">
+      <div class="cb-wrap" id="cbWrap" onclick="toggleAgree()">
+        <span id="cbMark" style="display:none;color:#fff;font-size:13px;font-weight:700;">✓</span>
+      </div>
+      <div class="agree-txt">
+        <strong style="color:var(--txt);">I have read and agree to the Terms & Conditions, Pricing, and FAQs above.</strong><br/>
+        I understand all custom orders are final sale and a booking fee is required.
+      </div>
+    </div>
+    <div class="agree-right">
+      <div class="lock-msg" id="lockMsg">🔒 Scroll through everything to unlock</div>
+      <button class="btn btn-out btn-sm" onclick="forceUnlock()" style="font-size:9px;padding:4px 10px;opacity:0.5;">I've read it all — unlock</button>
+      <button class="btn btn-mg" id="proceedBtn" onclick="proceed()" disabled style="opacity:0.35;cursor:not-allowed;">
+        Create Account →
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- LOCK OVERLAY -->
+<div class="lock-overlay" id="lockOverlay">
+  <div class="lock-box">
+    <div style="font-size:40px;margin-bottom:14px;">📜</div>
+    <div style="font-size:16px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">Please Read First</div>
+    <div style="font-family:var(--fb);font-style:italic;font-size:16px;color:var(--txt-m);line-height:1.6;margin-bottom:20px;">Scroll through the entire page before agreeing. We want to make sure you understand our process!</div>
+    <button class="btn btn-mg" style="width:100%;justify-content:center;" onclick="document.getElementById('lockOverlay').classList.remove('show')">Got it, I'll keep reading</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+<script src="core.js"></script>
+<script>
+  // ---- Top-level state (must be outside async so onclick handlers can access) ----
+  let hasRead = false, agreed = false;
+
+  function updatePct(){
+    const st = window.scrollY||document.documentElement.scrollTop;
+    const dh = Math.max(document.body.scrollHeight,document.documentElement.scrollHeight) - window.innerHeight;
+    const pct = dh>0 ? Math.min(100,Math.round((st/dh)*100)) : 100;
+    document.getElementById('readFill').style.width=pct+'%';
+    document.getElementById('pctLbl').textContent=pct+'%';
+    if(pct>=90 && !hasRead) unlock();
+  }
+
+  function unlock(){
+    hasRead=true;
+    document.getElementById('lockMsg').textContent="✓ You've read everything — check the box to continue";
+    document.getElementById('lockMsg').style.color='var(--ok)';
+    document.querySelector('.agree-bar').style.borderTopColor='var(--mg)';
+  }
+
+  function forceUnlock(){ unlock(); }
+
+  function toggleAgree(){
+    if(!hasRead){ document.getElementById('lockOverlay').classList.add('show'); return; }
+    agreed=!agreed;
+    document.getElementById('cbWrap').classList.toggle('on',agreed);
+    document.getElementById('cbMark').style.display=agreed?'block':'none';
+    const btn=document.getElementById('proceedBtn');
+    btn.disabled=!agreed;
+    btn.style.opacity=agreed?'1':'0.35';
+    btn.style.cursor=agreed?'pointer':'not-allowed';
+  }
+
+  function proceed(){
+    if(!hasRead||!agreed) return;
+    sessionStorage.setItem('terms_agreed','true');
+    window.location.href='customer-register.html';
+  }
+
+  window.addEventListener('scroll', updatePct, {passive:true});
+  window.addEventListener('resize', updatePct);
+  setInterval(()=>{ if(!hasRead) updatePct(); }, 400);
+  setTimeout(updatePct, 200);
+
+  // ---- Async data loading ----
+  (async () => {
+    // Populate pricing — grouped by item
+    const pg = document.getElementById('pricingGrid');
+    try {
+      const iRes = await apiFetch('/api/items');
+      if (iRes && iRes.ok && Array.isArray(iRes.data) && iRes.data.length && pg) {
+        pg.innerHTML = iRes.data.map(item => `
+          <div style="margin-bottom:20px;">
+            <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;color:var(--txt);margin-bottom:8px;">${item.icon} ${item.label}</div>
+            ${item.tiers && item.tiers.length
+              ? `<div class="price-grid">${item.tiers.map(t => `
+                  <div class="price-card">
+                    <div class="price-tier">${t.name}</div>
+                    <div class="price-amt">${t.price_label || 'Varies'}</div>
+                    <div class="price-desc">${t.description || ''}</div>
+                  </div>`).join('')}</div>`
+              : `<div style="font-size:12px;color:var(--txt-d);padding:8px 0;">Pricing available upon request.</div>`}
+          </div>`).join('');
+      } else if (pg) {
+        pg.innerHTML = '<div style="font-size:13px;color:var(--txt-d);">Pricing available upon request.</div>';
+      }
+    } catch(e) {
+      if (pg) pg.innerHTML = '<div style="font-size:13px;color:var(--txt-d);">Pricing available upon request.</div>';
+    }
+
+    // Production start date
+    const psd = document.getElementById('prodStartDate');
+    try {
+      const bkRes = await apiFetch('/api/settings/booking');
+      if(bkRes && bkRes.ok) psd && (psd.textContent = bkRes.data.prod_start || 'May 18, 2026');
+    } catch(e) { if(psd) psd.textContent = 'May 18, 2026'; }
+
+    // FAQs — API returns { question, answer } fields
+    const fl = document.getElementById('faqList');
+    try {
+      const fRes = await apiFetch('/api/faqs');
+      if(fRes && fRes.ok && Array.isArray(fRes.data) && fRes.data.length && fl) {
+        fl.innerHTML = fRes.data.map(f=>`
+          <div class="acc-item">
+            <div class="acc-head" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
+              ${f.question || f.q || ''} <span class="acc-arr">▾</span>
+            </div>
+            <div class="acc-body" style="font-family:var(--fb);font-style:italic;font-size:16px;line-height:1.7;color:var(--txt-m);">${f.answer || f.a || ''}</div>
+          </div>`).join('');
+      } else if (fl) {
+        fl.innerHTML = '<div style="font-size:13px;color:var(--txt-d);padding:12px 0;">No FAQs added yet.</div>';
+      }
+    } catch(e) {}
+  })();
+</script>
+</body>
+</html>

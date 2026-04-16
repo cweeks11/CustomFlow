@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>My Portal — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+</head>
+<body>
+<!--
+  PAGE: Customer Portal (customer-portal.html)
+  ============================================================
+  PURPOSE:
+    The home screen customers see after logging in. Shows their
+    order history, quick action shortcuts, and the FAQ accordion.
+  WHAT'S ON THIS PAGE:
+    1. Welcome banner with customer's first name + "Place New Order" CTA
+    2. Quick action cards — New Order, Track, Profile, Contact
+    3. Orders table — all orders belonging to this customer,
+                      clicking any row navigates to customer-order-detail.html
+    4. FAQ accordion — pulled from GET /api/faqs
+  KEY LOGIC:
+    - Pre-fills name from localStorage immediately (no blank flash)
+    - Refreshes user data fresh from API on every load
+    - requireCustomerAuth() at top redirects to login if not authenticated
+  BACKEND:
+    User    → GET /api/users/me
+    Orders  → GET /api/orders  (returns only the logged-in user's orders)
+    FAQs    → GET /api/faqs
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+<script>requireCustomerAuth(); renderCustomerNav('customer-portal.html');</script>
+
+<div class="page page-sm">
+  <!-- WELCOME -->
+  <div class="card" style="margin-bottom:20px;position:relative;overflow:hidden;">
+    <div style="position:absolute;top:0;left:0;right:0;height:2px;background:linear-gradient(to right,var(--mg),var(--vio-l),var(--gld));"></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;">
+      <div>
+        <div style="font-size:24px;font-weight:700;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px;">Welcome, <span style="color:var(--mg);" id="wName">—</span></div>
+        <div style="font-size:13px;color:var(--txt-m);">Manage your custom orders and track your pieces</div>
+      </div>
+      <a href="customer-order-form.html" class="btn btn-mg">+ Place New Order</a>
+    </div>
+  </div>
+
+  <!-- QUICK ACTIONS -->
+  <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin-bottom:22px;">
+    <a href="customer-order-form.html" class="card" style="display:flex;flex-direction:column;gap:8px;text-decoration:none;transition:all 0.2s;cursor:pointer;" onmouseover="this.style.borderColor='var(--mg)'" onmouseout="this.style.borderColor='var(--b1)'">
+      <div style="font-size:22px;">🎨</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">New Order</div>
+      <div style="font-size:12px;color:var(--txt-m);">Submit a custom order</div>
+    </a>
+    <a href="customer-track.html" class="card" style="display:flex;flex-direction:column;gap:8px;text-decoration:none;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--mg)'" onmouseout="this.style.borderColor='var(--b1)'">
+      <div style="font-size:22px;">📦</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Track</div>
+      <div style="font-size:12px;color:var(--txt-m);">Order tracking</div>
+    </a>
+    <a href="customer-settings.html" class="card" style="display:flex;flex-direction:column;gap:8px;text-decoration:none;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--mg)'" onmouseout="this.style.borderColor='var(--b1)'">
+      <div style="font-size:22px;">👤</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Profile</div>
+      <div style="font-size:12px;color:var(--txt-m);">Account settings</div>
+    </a>
+    <a href="mailto:CopeAestheticCustoms@gmail.com" class="card" style="display:flex;flex-direction:column;gap:8px;text-decoration:none;transition:all 0.2s;" onmouseover="this.style.borderColor='var(--mg)'" onmouseout="this.style.borderColor='var(--b1)'">
+      <div style="font-size:22px;">✉️</div>
+      <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;">Contact</div>
+      <div style="font-size:12px;color:var(--txt-m);">Reach Buffy</div>
+    </a>
+  </div>
+
+  <!-- ORDERS TABLE -->
+  <div class="card" style="padding:0;overflow:hidden;margin-bottom:22px;">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--b1);display:flex;align-items:center;justify-content:space-between;">
+      <div class="card-title"><span class="card-dot"></span>My Orders</div>
+    </div>
+    <div id="ordersWrap"><div style="padding:24px;text-align:center;color:var(--txt-d);font-size:13px;">Loading orders...</div></div>
+  </div>
+
+  <!-- FAQs -->
+  <div style="margin-bottom:4px;">
+    <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--txt);margin-bottom:14px;">Frequently Asked Questions</div>
+    <div id="faqList"></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  // Pre-fill name from localStorage immediately so welcome never shows "—"
+  (function() {
+    const cached = JSON.parse(localStorage.getItem('customer_user') || '{}');
+    const cachedName = (cached.name || '').split(' ')[0] || '';
+    if (cachedName) {
+      document.getElementById('wName').textContent = cachedName;
+      const av = document.getElementById('navAv');
+      if (av) av.textContent = cachedName[0].toUpperCase();
+    }
+  })();
+
+  // Refresh user from API and update name in place
+  apiFetch('/api/users/me').then(r => {
+    if (r && r.ok && r.data) {
+      localStorage.setItem('customer_user', JSON.stringify(r.data));
+      const freshName = (r.data.name || '').split(' ')[0] || 'there';
+      document.getElementById('wName').textContent = freshName;
+      const av = document.getElementById('navAv');
+      if (av && freshName.length) av.textContent = freshName[0].toUpperCase();
+    }
+  }).catch(() => {});
+
+  // Load orders + FAQs
+  (async () => {
+    // Orders
+    let myOrders = [];
+    try {
+      const result = await apiFetch('/api/orders');
+      if (result && result.ok) {
+        myOrders = Array.isArray(result.data) ? result.data : [];
+      }
+    } catch(e) { myOrders = []; }
+
+    const ow = document.getElementById('ordersWrap');
+    if (!myOrders.length) {
+      ow.innerHTML = `
+        <div class="empty">
+          <div class="empty-icon">🎨</div>
+          <div class="empty-txt">No orders yet.</div>
+          <a href="customer-order-form.html" class="btn btn-mg">Place Your First Order</a>
+        </div>`;
+    } else {
+      ow.innerHTML = `
+        <div class="tbl-wrap" style="border:none;border-radius:0;">
+          <table>
+            <thead>
+              <tr>
+                <th>Order #</th><th>Item</th><th>Tier</th><th>Rush</th><th>Date</th><th>Status</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              ${myOrders.map(o => `
+                <tr style="cursor:pointer;" onclick="window.location='customer-order-detail.html?id=${o.id}'">
+                  <td><strong>${o.order_number || o.id}</strong></td>
+                  <td>${o.item_type || '—'}</td>
+                  <td style="font-size:12px;text-transform:capitalize;">${o.pricing_tier || '—'}</td>
+                  <td>${o.is_rush ? '<span style="color:var(--warn);font-size:11px;font-weight:700;">⚡ Rush</span>' : '—'}</td>
+                  <td>${formatDate(o.created_at)}</td>
+                  <td>${statusBadge(o.status)}</td>
+                  <td style="color:var(--txt-d);font-size:18px;">›</td>
+                </tr>`).join('')}
+            </tbody>
+          </table>
+        </div>`;
+    }
+
+    // FAQs
+    let faqs = [];
+    try {
+      const faqResult = await apiFetch('/api/faqs');
+      if (faqResult && faqResult.ok && Array.isArray(faqResult.data)) {
+        faqs = faqResult.data;
+      }
+    } catch(e) {}
+
+    const faqEl = document.getElementById('faqList');
+    faqEl.innerHTML = faqs.map(f => `
+      <div class="acc-item">
+        <div class="acc-head" onclick="this.classList.toggle('open');this.nextElementSibling.classList.toggle('open');">
+          ${f.question || f.q || ''} <span class="acc-arr">▾</span>
+        </div>
+        <div class="acc-body" style="font-family:var(--fb);font-style:italic;font-size:16px;line-height:1.7;color:var(--txt-m);">
+          ${f.answer || f.a || ''}
+        </div>
+      </div>`).join('');
+
+    // Close open FAQ when clicking outside
+    document.addEventListener('click', e => {
+      if (!e.target.closest('.acc-item')) {
+        document.querySelectorAll('.acc-head.open').forEach(h => {
+          h.classList.remove('open');
+          if (h.nextElementSibling) h.nextElementSibling.classList.remove('open');
+        });
+      }
+    });
+  })();
+</script>
+</body>
+</html>

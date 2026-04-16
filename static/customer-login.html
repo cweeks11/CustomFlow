@@ -1,0 +1,141 @@
+<!--
+  PAGE: Customer Login (customer-login.html)
+  ============================================================
+  PURPOSE:
+    Sign-in page for returning customers to access their portal.
+
+  MOCK CREDENTIALS (development only):
+    Email:    customer@email.com
+    Password: customer123
+
+  KEY LOGIC:
+    doLogin()  — validates against mock user list, saves customer_token
+                 and customer_user to localStorage, redirects to portal.
+                 In production: POST /api/login  { email, password }
+
+  AUTH CHECK:
+    If customer_token already exists, redirects straight to portal
+    so already-logged-in users skip this screen.
+
+  LINKS:
+    "Read terms & register" → customer-terms.html
+    (Customers must read terms before registering — PRD Feature 1)
+
+  BACKEND TODO:
+    doLogin()  → POST /api/login
+                 Save response.token as 'customer_token' in localStorage
+  ============================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Sign In — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <style>
+    body{display:flex;min-height:100vh;overflow:hidden;}
+    .lp{width:44%;background:var(--s1);border-right:1px solid var(--b1);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;position:relative;overflow:hidden;}
+    .lp::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 40% 50%,rgba(242,23,165,0.05) 0%,transparent 60%);}
+    .rp{flex:1;display:flex;align-items:center;justify-content:center;padding:60px 52px;}
+    .brand{text-align:center;z-index:1;}
+    .brand img{width:280px;max-width:90%;margin-bottom:26px;mix-blend-mode:lighten;display:block;margin-left:auto;margin-right:auto;}
+    .bl{width:60px;height:1px;background:linear-gradient(to right,transparent,var(--gld-d),transparent);margin:0 auto 18px;}
+    .bq{font-family:var(--fb);font-style:italic;font-size:16px;color:rgba(240,237,232,0.4);line-height:1.6;max-width:240px;text-align:center;}
+    .box{width:100%;max-width:380px;}
+    .ey{font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--mg);margin-bottom:10px;}
+    .ttl{font-size:30px;font-weight:700;letter-spacing:2px;text-transform:uppercase;line-height:1;margin-bottom:6px;}
+    .sub{font-size:14px;color:var(--txt-m);margin-bottom:30px;}
+    .divrow{display:flex;align-items:center;gap:12px;margin:18px 0;}
+    .divrow span{height:1px;flex:1;background:var(--b1);}
+    .divrow p{font-size:10px;letter-spacing:2px;color:var(--txt-d);text-transform:uppercase;}
+    .clink{text-align:center;font-size:12px;color:var(--txt-m);}
+    .clink a{color:var(--mg);text-decoration:none;font-weight:600;}
+    @media(max-width:768px){.lp{display:none;}.rp{padding:40px 24px;}}
+  </style>
+</head>
+<body>
+<div class="lp"><div class="brand">
+  <img src="logo_white_transparent.png" alt="Cope Aesthetic Customs" style="width:240px;max-width:90%;mix-blend-mode:lighten;display:block;margin:0 auto 24px;"/>
+  <div class="bl"></div>
+  <div class="bq">"Every custom painted piece becomes a ritual of self-expression you can wear into the world."</div>
+</div></div>
+<div class="rp"><div class="box">
+  <div class="ey">Welcome Back</div>
+  <div class="ttl">Sign In</div>
+  <div class="sub">Access your orders and track your custom piece</div>
+  <div class="err-box" id="err"></div>
+  <div class="fg"><label class="fl">Email Address</label><input type="email" class="fc" id="email" placeholder="you@email.com" autocomplete="email"/></div>
+  <div class="fg" style="margin-bottom:24px;"><label class="fl">Password</label><input type="password" class="fc" id="pw" placeholder="••••••••" autocomplete="current-password"/></div>
+  <button class="btn btn-mg" style="width:100%;padding:13px;font-size:12px;justify-content:center;" id="loginBtn" onclick="doLogin()">
+    <div class="spin-sm" id="sp"></div><span id="bt">Sign In</span>
+  </button>
+  <div class="divrow"><span></span><p>or</p><span></span></div>
+  <div class="clink">Don't have an account? <a href="customer-terms.html">Read terms & register →</a></div>
+  <div class="clink" style="margin-top:10px;"><a href="landing.html" style="color:var(--txt-d);">← Back to home</a></div>
+</div></div>
+<script src="core.js"></script>
+<script>
+  // Validate existing token before auto-redirecting — don't redirect on expired tokens
+  (async () => {
+    const token = localStorage.getItem('customer_token');
+    if (token) {
+      try {
+        const res = await fetch('/api/users/me', {
+          headers: { 'Authorization': 'Bearer ' + token }
+        });
+        if (res.ok) {
+          window.location.href = 'customer-portal.html';
+        } else {
+          // Token expired or invalid — clear it so login form shows
+          localStorage.removeItem('customer_token');
+          localStorage.removeItem('customer_user');
+        }
+      } catch(e) {
+        // Network error — still show login form
+      }
+    }
+  })();
+  document.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+  async function doLogin(){
+    const email=document.getElementById('email').value.trim();
+    const pw=document.getElementById('pw').value;
+    const err=document.getElementById('err');
+    err.classList.remove('show');
+    if(!email||!pw){err.textContent='Please enter your email and password.';err.classList.add('show');return;}
+    const btn=document.getElementById('loginBtn');btn.disabled=true;
+    document.getElementById('sp').style.display='block';document.getElementById('bt').textContent='Signing in...';
+    // Call real Flask API
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pw })
+      });
+      const data = await res.json();
+      if (res.ok && data.user.role === 'customer') {
+        localStorage.setItem('customer_token', data.token);
+        localStorage.setItem('customer_user', JSON.stringify(data.user));
+        window.location.href = 'customer-portal.html';
+      } else if (res.ok) {
+        // Owner/employee — redirect to admin portal
+        localStorage.setItem('admin_token', data.token);
+        localStorage.setItem('admin_user', JSON.stringify(data.user));
+        window.location.href = 'admin-dashboard.html';
+      } else {
+        err.textContent = data.error || 'Invalid credentials.';
+        err.classList.add('show');
+        btn.disabled=false;
+        document.getElementById('sp').style.display='none';
+        document.getElementById('bt').textContent='Sign In';
+      }
+    } catch(e) {
+      err.textContent = 'Could not connect to server. Please try again.';
+      err.classList.add('show');
+      btn.disabled=false;
+      document.getElementById('sp').style.display='none';
+      document.getElementById('bt').textContent='Sign In';
+    }
+  }
+</script>
+<div class="toast" id="toast"></div>
+</body></html>

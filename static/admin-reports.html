@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Reports — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+<!--
+  PAGE: Admin Reports (admin-reports.html)
+  ============================================================
+  PURPOSE:
+    Revenue and order analytics for Buffy. Shows total income,
+    breakdowns by payment type and item type, rush stats, and
+    a ranking of top customers by total spend.
+
+  WHAT'S ON THIS PAGE:
+    1. Date range selector (dropdown — currently cosmetic, all data shown)
+    2. Revenue stats row — total revenue, total orders, avg order value, rush count
+    3. Bar chart — revenue by payment type (booking, custom, rush, etc.)
+    4. Donut chart — orders by item type
+    5. Rush stats grid — total/approved/pending/rush revenue
+    6. Tier breakdown bar chart — orders by pricing tier
+    7. Top customers table — ranked by total payments
+
+  KEY FUNCTIONS:
+    loadReports()  — calculates all metrics from MOCK.orders and MOCK.payments,
+                     builds all four charts, renders top customers table.
+                     All charts are destroyed and rebuilt on each call to avoid
+                     Chart.js "canvas already in use" errors.
+
+  BACKEND TODO:
+    loadReports()  → GET /api/reports?range=365
+                     Returns pre-aggregated stats from the server (faster
+                     than sending all raw data and computing in the browser)
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+
+<div class="page">
+  <div class="page-head">
+    <div><div class="page-title">Sales Reports</div><div class="page-sub">Revenue and order analytics</div></div>
+    <div style="display:flex;gap:10px;align-items:center;">
+      <select class="fc" id="range" onchange="loadReports()" style="width:auto;min-width:160px;">
+        <option value="30">Last 30 Days</option>
+        <option value="90">Last 90 Days</option>
+        <option value="180">Last 6 Months</option>
+        <option value="365" selected>All Time</option>
+      </select>
+      <button class="btn btn-gld" onclick="loadReports()">↻ Refresh</button>
+    </div>
+  </div>
+
+  <!-- REVENUE STATS -->
+  <div class="stats" id="revStats">
+    <div class="stat mg"><div class="spin"></div></div>
+    <div class="stat gld"><div class="spin"></div></div>
+    <div class="stat vio"><div class="spin"></div></div>
+    <div class="stat ok"><div class="spin"></div></div>
+  </div>
+
+  <!-- MAIN CHARTS -->
+  <div class="g2" style="margin-bottom:20px;">
+    <div class="card">
+      <div class="card-head"><div class="card-title"><span class="card-dot"></span>Revenue by Payment Type</div></div>
+      <div style="position:relative;height:240px;"><canvas id="revChart"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--gld);"></span>Revenue by Item Type</div></div>
+      <div style="position:relative;height:240px;"><canvas id="itemChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- RUSH + TIER BREAKDOWN -->
+  <div class="g2" style="margin-bottom:20px;">
+    <div class="card">
+      <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--warn);"></span>Rush Orders</div></div>
+      <div id="rushStats"></div>
+    </div>
+    <div class="card">
+      <div class="card-head"><div class="card-title"><span class="card-dot" style="background:var(--vio-l);"></span>Pricing Tier Breakdown</div></div>
+      <div style="position:relative;height:200px;"><canvas id="tierChart"></canvas></div>
+    </div>
+  </div>
+
+  <!-- TOP CUSTOMERS -->
+  <div class="card" style="padding:0;overflow:hidden;">
+    <div style="padding:16px 20px;border-bottom:1px solid var(--b1);">
+      <div class="card-title"><span class="card-dot"></span>Top Customers</div>
+    </div>
+    <div class="tbl-wrap" style="border:none;border-radius:0;">
+      <table>
+        <thead><tr>
+          <th>#</th><th>Customer</th><th>Orders</th><th>Total Paid</th><th>Last Order</th>
+        </tr></thead>
+        <tbody id="topCust"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+  requireAdminAuth();
+  renderAdminNav('admin-reports.html');
+
+  let revInst=null, itemInst=null, tierInst=null;
+
+  async function loadReports() {
+    const rptRes = await apiFetch('/api/reports');
+    if (!rptRes || !rptRes.ok) { console.error('Reports load failed'); return; }
+    const rpt = rptRes.data;
+
+    const ordersRes = await apiFetch('/api/orders');
+    const orders = (ordersRes && ordersRes.ok) ? ordersRes.data : [];
+
+    // Load pricing tiers so chart labels match what Buffy named them
+    const tierRes = await apiFetch('/api/pricing_tiers/all');
+    const pricingTiers = (tierRes && tierRes.ok) ? tierRes.data : [];
+    // Build a map: lowercase tier key → display name
+    const tierNameMap = {};
+    pricingTiers.forEach(t => {
+      tierNameMap[t.name.toLowerCase()] = t.name;
+    });
+
+    // Use real revenue data from API
+    const totalRev   = rpt.total_revenue || 0;
+    const byType     = rpt.revenue_by_type || {};
+    const tierCounts = rpt.tier_counts || {};
+    const totalOrd   = orders.length;
+    const rushCount  = orders.filter(o=>o.is_rush).length;
+    // Avg over orders that have payments (top_customers count)
+    const ordersWithPayments = (rpt.top_customers||[]).reduce((s,tc)=>s+(tc.order_count||0),0) || totalOrd;
+    const avgRev = ordersWithPayments ? totalRev / totalOrd : 0;
+
+    // Revenue stats row
+    document.getElementById('revStats').innerHTML = `
+      <div class="stat mg"><div class="stat-lbl">Total Revenue</div><div class="stat-val">${formatCurrency(totalRev)}</div><div class="stat-sub">All paid payments</div></div>
+      <div class="stat gld"><div class="stat-lbl">Total Orders</div><div class="stat-val">${totalOrd}</div><div class="stat-sub">All time</div></div>
+      <div class="stat vio"><div class="stat-lbl">Avg Order Value</div><div class="stat-val">${formatCurrency(avgRev)}</div><div class="stat-sub">Per order</div></div>
+      <div class="stat ok"><div class="stat-lbl">Rush Orders</div><div class="stat-val">${rushCount}</div><div class="stat-sub">${orders.filter(o=>o.rush_approved).length} approved</div></div>`;
+
+    // Revenue by payment type bar chart
+    const revCtx = document.getElementById('revChart').getContext('2d');
+    if (revInst) revInst.destroy();
+    const typeLabels = Object.keys(byType).map(t => t.charAt(0).toUpperCase()+t.slice(1));
+    const typeValues = Object.values(byType);
+    revInst = new Chart(revCtx, {
+      type: 'bar',
+      data: { labels: typeLabels.length ? typeLabels : ['No payments yet'], datasets: [{ label:'Revenue', data: typeValues.length ? typeValues : [0], backgroundColor:'#F217A5', borderRadius:5 }] },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+        scales:{ y:{ beginAtZero:true, ticks:{callback:v=>'$'+v.toLocaleString(), font:{family:'Barlow Condensed'}, color:'#858488'}, grid:{color:'#2C2C2C'} }, x:{ grid:{display:false}, ticks:{font:{family:'Barlow Condensed'},color:'#858488'} } } }
+    });
+
+    // Orders by item type donut chart
+    const byItem = {};
+    orders.forEach(o => { byItem[o.item_type] = (byItem[o.item_type]||0) + 1; });
+    const itemCtx = document.getElementById('itemChart').getContext('2d');
+    if (itemInst) itemInst.destroy();
+    itemInst = new Chart(itemCtx, {
+      type: 'doughnut',
+      data: { labels: Object.keys(byItem), datasets:[{ data:Object.values(byItem), backgroundColor:['#F217A5','#D8BC84','#6B2FBE','#E8A020','#2ECC71','#3498DB','#858488'], borderWidth:0 }] },
+      options: { responsive:true, maintainAspectRatio:false, cutout:'60%', plugins:{ legend:{ position:'bottom', labels:{ font:{family:'Barlow Condensed',size:11}, color:'#858488', padding:12 } } } }
+    });
+
+    // Orders by pricing tier — use display names from admin settings
+    const tierCtx = document.getElementById('tierChart').getContext('2d');
+    if (tierInst) tierInst.destroy();
+    const tierLabels = Object.keys(tierCounts).map(k => tierNameMap[k.toLowerCase()] || k);
+    const tierValues = Object.values(tierCounts);
+    tierInst = new Chart(tierCtx, {
+      type: 'bar',
+      data: { labels: tierLabels, datasets:[{ data: tierValues, backgroundColor:'#6B2FBE', borderRadius:5 }] },
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}},
+        scales:{ y:{beginAtZero:true,ticks:{font:{family:'Barlow Condensed'},color:'#858488'},grid:{color:'#2C2C2C'}}, x:{grid:{display:false},ticks:{font:{family:'Barlow Condensed'},color:'#858488'}} } }
+    });
+
+    // Rush stats — use real order data
+    const rushRev = byType['rush'] || 0;
+    document.getElementById('rushStats').innerHTML = `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;font-size:13px;">
+        <div><div class="fl">Total Rush</div><div style="font-size:24px;font-weight:700;">${rushCount}</div></div>
+        <div><div class="fl">Approved</div><div style="font-size:24px;font-weight:700;color:var(--ok);">${orders.filter(o=>o.rush_approved).length}</div></div>
+        <div><div class="fl">Pending</div><div style="font-size:24px;font-weight:700;color:var(--warn);">${orders.filter(o=>o.is_rush&&!o.rush_approved).length}</div></div>
+        <div><div class="fl">Rush Revenue</div><div style="font-size:24px;font-weight:700;color:var(--gld);">${formatCurrency(rushRev)}</div></div>
+      </div>`;
+
+    // Top customers from API
+    const topCusts = rpt.top_customers || [];
+    if (topCusts.length) {
+      const custLast = {};
+      orders.forEach(o => {
+        if (!custLast[o.user_id] || o.created_at > custLast[o.user_id]) custLast[o.user_id] = o.created_at;
+      });
+      document.getElementById('topCust').innerHTML = topCusts.map((tc, i) => {
+        const u = tc.user || {};
+        return `<tr>
+          <td style="color:var(--txt-m);font-weight:700;">${i+1}</td>
+          <td><strong>${u.name||'—'}</strong><br/><span style="font-size:11px;color:var(--txt-m);">${u.email||''}</span></td>
+          <td>${tc.order_count||0}</td>
+          <td style="color:var(--gld);font-weight:700;">${formatCurrency(tc.total_paid||0)}</td>
+          <td>${formatDate(custLast[u.id])}</td>
+        </tr>`;
+      }).join('');
+    } else {
+      document.getElementById('topCust').innerHTML = '<tr><td colspan="5" style="text-align:center;color:var(--txt-d);padding:20px;">No payment data yet.</td></tr>';
+    }
+  }
+
+  loadReports();
+</script>
+</body>
+</html>

@@ -1,0 +1,423 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Place an Order — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <style>
+    .steps-nav{display:flex;align-items:center;justify-content:center;gap:0;margin-bottom:36px;overflow-x:auto;padding-bottom:2px;}
+    .step-pill{display:flex;align-items:center;gap:0;flex-shrink:0;}
+    .snb{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:700;border:2px solid var(--b1);color:var(--txt-d);background:transparent;transition:all 0.25s;}
+    .snb.done{background:var(--ok);border-color:var(--ok);color:#fff;}
+    .snb.active{background:var(--mg);border-color:var(--mg);color:#fff;box-shadow:0 0 10px rgba(242,23,165,0.35);}
+    .sntxt{font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--txt-d);margin-left:7px;margin-right:4px;transition:color 0.25s;white-space:nowrap;}
+    .sntxt.active{color:var(--txt);}
+    .snconn{width:30px;height:1px;background:var(--b1);margin:0 4px;flex-shrink:0;}
+    .snconn.done{background:var(--ok);}
+    .step-page{display:none;animation:fadeUp 0.3s ease;}
+    .step-page.show{display:block;}
+    @keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+    .item-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px;margin-bottom:20px;}
+    .item-card{background:var(--s1);border:2px solid var(--b1);border-radius:10px;padding:20px 16px;text-align:center;cursor:pointer;transition:all 0.2s;}
+    .item-card:hover{border-color:var(--chr);}
+    .item-card.sel{border-color:var(--mg);background:rgba(242,23,165,0.06);}
+    .item-icon{font-size:28px;margin-bottom:10px;}
+    .item-lbl{font-size:11px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;}
+    .tier-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:14px;margin-bottom:20px;}
+    .tier-card{background:var(--s1);border:2px solid var(--b1);border-radius:10px;padding:20px;cursor:pointer;transition:all 0.2s;position:relative;}
+    .tier-card:hover{border-color:var(--chr);}
+    .tier-card.sel{border-color:var(--mg);background:rgba(242,23,165,0.06);}
+    .tier-lbl{font-size:12px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:5px;}
+    .tier-price{font-size:22px;font-weight:700;color:var(--gld);margin-bottom:8px;line-height:1;}
+    .tier-desc{font-size:12px;color:var(--txt-m);line-height:1.5;}
+    .review-row{display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--b1);font-size:13px;}
+    .review-row:last-child{border:none;}
+  </style>
+</head>
+<body>
+<!--
+  PAGE: Customer Order Form (customer-order-form.html)
+  ============================================================
+  PURPOSE:
+    The 4-step intake form where a customer submits a new custom order.
+    On submission the order is placed in the Free Waitlist (PRD Feature 2).
+  STEP FLOW:
+    Step 1 — Item Type: pick the item + condition (new vs pre-loved)
+    Step 2 — Pricing Tier: select standard/detailed/premium + rush + AI photo
+    Step 3 — Design Details: describe vision, upload reference photos, consult
+    Step 4 — Review: summary of all selections before submitting
+    Step 5 — Success: confirmation screen with new order ID
+  BACKEND:
+    submitOrder()  → POST /api/orders
+    photos         → POST /api/orders/:id/images { url, type: 'reference' }
+    add-on         → POST /api/add_ons { order_id, name, price, quantity }
+  ============================================================
+-->
+<script src="core.js"></script>
+<script src="navbar.js"></script>
+<script>requireCustomerAuth(); renderCustomerNav('customer-order-form.html');</script>
+<div class="page page-sm">
+  <a href="customer-portal.html" class="back">← Back to Portal</a>
+  <div class="page-head">
+    <div><div class="page-title">Place a <span>Custom Order</span></div><div class="page-sub">Tell Buffy your vision — you'll be placed on the Free Waitlist</div></div>
+  </div>
+  <!-- STEPS NAV -->
+  <div class="steps-nav" id="stepsNav"></div>
+  <!-- STEP 1: ITEM TYPE -->
+  <div class="step-page" id="step1">
+    <div style="margin-bottom:20px;">
+      <div class="card-title" style="margin-bottom:4px;"><span class="card-dot"></span>What are you customizing?</div>
+      <div style="font-size:13px;color:var(--txt-m);">Select the type of item you want Buffy to paint</div>
+    </div>
+    <div class="item-grid" id="itemGrid"></div>
+    <div class="fg"><label class="fl">Item Condition</label>
+      <div style="display:flex;gap:12px;flex-wrap:wrap;">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--txt-m);cursor:pointer;padding:10px 14px;background:var(--s1);border:1px solid var(--b1);border-radius:6px;transition:all 0.2s;" id="condNew">
+          <input type="radio" name="cond" value="new" style="accent-color:var(--mg);" checked/> Brand new / unworn
+        </label>
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--txt-m);cursor:pointer;padding:10px 14px;background:var(--s1);border:1px solid var(--b1);border-radius:6px;transition:all 0.2s;" id="condUsed">
+          <input type="radio" name="cond" value="preloved" style="accent-color:var(--mg);"/> Pre-loved / used
+        </label>
+      </div>
+      <div id="cleanFeeNote" style="display:none;margin-top:8px;padding:8px 12px;background:rgba(232,160,32,0.08);border:1px solid rgba(232,160,32,0.2);border-radius:5px;font-size:12px;color:var(--warn);">
+        ⚠ A cleaning fee of $25 will be added for pre-loved items.
+      </div>
+    </div>
+    <div style="display:flex;justify-content:flex-end;margin-top:16px;">
+      <button class="btn btn-mg" onclick="nextStep(2)">Next: Choose Tier →</button>
+    </div>
+  </div>
+  <!-- STEP 2: PRICING TIER -->
+  <div class="step-page" id="step2">
+    <div style="margin-bottom:20px;">
+      <div class="card-title" style="margin-bottom:4px;"><span class="card-dot" style="background:var(--gld);"></span>Choose a pricing tier</div>
+      <div style="font-size:13px;color:var(--txt-m);">This is an estimate — Buffy will confirm your exact quote</div>
+    </div>
+    <div class="tier-grid" id="tierGrid"></div>
+    <!-- RUSH OPTION -->
+    <div class="card" style="margin-bottom:16px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;color:var(--warn);">⚡ Rush Order</div>
+          <div style="font-size:12px;color:var(--txt-m);">Need it fast? Rush fee = 50% of your custom fee. Subject to Buffy's availability approval.</div>
+        </div>
+        <label class="toggle" style="flex-shrink:0;"><input type="checkbox" id="isRush" onchange="toggleRush()"/><span class="tslider"></span></label>
+      </div>
+      <div id="rushDateWrap" style="display:none;margin-top:14px;">
+        <div class="fg"><label class="fl">Must Have By Date</label><input type="date" class="fc" id="mustHaveBy" style="max-width:220px;"/></div>
+      </div>
+    </div>
+    <!-- ADD-ON -->
+    <div class="card" style="margin-bottom:20px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;text-transform:uppercase;margin-bottom:3px;">📸 AI Photography Add-On</div>
+          <div style="font-size:12px;color:var(--txt-m);">Professional AI-enhanced product photos of your finished piece — $35</div>
+        </div>
+        <label class="toggle" style="flex-shrink:0;"><input type="checkbox" id="wantsPhoto"/><span class="tslider"></span></label>
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <button class="btn btn-out" onclick="goStep(1)">← Back</button>
+      <button class="btn btn-mg" onclick="nextStep(3)">Next: Design Details →</button>
+    </div>
+  </div>
+  <!-- STEP 3: DESIGN DETAILS -->
+  <div class="step-page" id="step3">
+    <div style="margin-bottom:20px;">
+      <div class="card-title" style="margin-bottom:4px;"><span class="card-dot" style="background:var(--vio-l);"></span>Design & Vision</div>
+      <div style="font-size:13px;color:var(--txt-m);">Tell Buffy everything she needs to know</div>
+    </div>
+    <div class="fg">
+      <label class="fl">Design Vision & Concept <span style="color:var(--err);">*</span></label>
+      <textarea class="fc" id="designNotes" rows="5" placeholder="Describe your vision in detail. What theme, colors, characters, or vibe are you going for? The more specific, the better!"></textarea>
+    </div>
+    <div class="fg">
+      <label class="fl">Inspiration References (optional)</label>
+      <div class="drop-zone" id="inspDrop">
+        <input type="file" id="inspFile" accept="image/*" multiple onchange="addInspPhotos(event)"/>
+        <div style="font-size:22px;opacity:0.3;margin-bottom:6px;">🖼</div>
+        <div class="drop-txt">Upload inspiration photos, logos, references</div>
+        <div class="drop-sub">PNG, JPG — drag & drop or click</div>
+      </div>
+      <div class="gallery" id="inspGal" style="margin-top:10px;"></div>
+    </div>
+    <div class="fg">
+      <label class="fl">Consult Call (optional)</label>
+      <label style="display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--txt-m);cursor:pointer;padding:12px 14px;background:var(--s1);border:1px solid var(--b1);border-radius:6px;">
+        <input type="checkbox" id="wantsConsult" style="accent-color:var(--mg);margin-top:2px;"/>
+        <span>Request a consult call with Buffy before we begin — she'll reach out to schedule</span>
+      </label>
+    </div>
+    <div class="fg">
+      <label class="fl">Additional Notes (optional)</label>
+      <textarea class="fc" id="extraNotes" rows="3" placeholder="Anything else Buffy should know? Deadlines, concerns, special instructions..."></textarea>
+    </div>
+    <div style="display:flex;justify-content:space-between;">
+      <button class="btn btn-out" onclick="goStep(2)">← Back</button>
+      <button class="btn btn-mg" onclick="nextStep(4)">Review Order →</button>
+    </div>
+  </div>
+  <!-- STEP 4: REVIEW + SUBMIT -->
+  <div class="step-page" id="step4">
+    <div style="margin-bottom:20px;">
+      <div class="card-title" style="margin-bottom:4px;"><span class="card-dot" style="background:var(--ok);"></span>Review Your Order</div>
+      <div style="font-size:13px;color:var(--txt-m);">Make sure everything looks right before submitting</div>
+    </div>
+    <div class="card" id="reviewCard" style="margin-bottom:18px;"></div>
+    <div style="padding:14px 16px;background:rgba(242,23,165,0.05);border:1px solid rgba(242,23,165,0.12);border-radius:8px;margin-bottom:18px;">
+      <div style="font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--mg);margin-bottom:6px;">What Happens Next</div>
+      <div style="font-size:12px;color:var(--txt-m);line-height:1.7;">
+        1. You'll be placed on the <strong>Free Waitlist</strong><br/>
+        2. Buffy will review your vision and send a quote<br/>
+        3. Pay the <strong>$50 booking fee</strong> to secure your spot on the Paid Waitlist<br/>
+        4. Production begins when you're at the front of the queue
+      </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;gap:12px;">
+      <button class="btn btn-out" onclick="goStep(3)">← Edit</button>
+      <button class="btn btn-mg btn-lg" id="submitBtn" onclick="submitOrder()">
+        <div class="spin-sm" id="sp"></div><span id="submitTxt">Submit Order to Waitlist ✓</span>
+      </button>
+    </div>
+  </div>
+  <!-- STEP 5: SUCCESS -->
+  <div class="step-page" id="step5">
+    <div style="text-align:center;padding:60px 20px;">
+      <div style="font-size:60px;margin-bottom:20px;">🎉</div>
+      <div style="font-size:28px;font-weight:700;letter-spacing:2px;text-transform:uppercase;margin-bottom:10px;">Order Submitted!</div>
+      <div style="font-family:var(--fb);font-style:italic;font-size:18px;color:var(--txt-m);margin-bottom:28px;">You're on the Free Waitlist. Buffy will be in touch with your quote.</div>
+      <div id="newOrderId" style="font-size:13px;color:var(--txt-m);margin-bottom:28px;"></div>
+      <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+        <a href="customer-portal.html" class="btn btn-mg">View My Orders</a>
+        <a href="customer-order-form.html" class="btn btn-out">Submit Another</a>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+<script>
+  const user=JSON.parse(localStorage.getItem('customer_user')||'{}');
+  const fn=(user.name||'').split(' ')[0];
+
+  // Block order submission if influencer approval is pending or denied
+  if (user.customer_type === 'influencer' && user.influencer_status !== 'approved') {
+    const isPending = user.influencer_status === 'pending';
+    document.querySelector('.page').innerHTML = `
+      <a href="customer-portal.html" class="back">← Back to Portal</a>
+      <div style="max-width:520px;margin:60px auto;text-align:center;">
+        <div style="font-size:48px;margin-bottom:20px;">${isPending ? '⏳' : '✕'}</div>
+        <div style="font-size:22px;font-weight:700;color:var(--txt);margin-bottom:12px;">
+          ${isPending ? 'Influencer Approval Pending' : 'Influencer Request Not Approved'}
+        </div>
+        <div style="font-size:14px;color:var(--txt-m);line-height:1.7;margin-bottom:28px;">
+          ${isPending
+            ? 'Your influencer account request is waiting for Buffy\'s approval. You\'ll be able to place orders once she reviews and approves your account.<br/><br/>This usually happens within 1–2 business days.'
+            : 'Your influencer account request wasn\'t approved. You can still place orders as an Individual — just update your account type in Settings.'}
+        </div>
+        <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;">
+          <a href="customer-portal.html" class="btn btn-out">← My Orders</a>
+          <a href="customer-settings.html" class="btn btn-mg">${isPending ? '⚙ Account Settings' : '⚙ Update Account Type'}</a>
+        </div>
+        ${isPending ? `
+        <div style="margin-top:28px;padding:14px 18px;background:rgba(242,23,165,0.05);border:1px solid rgba(242,23,165,0.15);border-radius:8px;font-size:12px;color:var(--txt-m);">
+          Questions? Reach out to Buffy directly at
+          <a href="mailto:CopeAestheticCustoms@gmail.com" style="color:var(--mg);">CopeAestheticCustoms@gmail.com</a>
+        </div>` : ''}
+      </div>`;
+    throw new Error('Order form blocked — influencer approval required');
+  }
+
+  const STEPS=['Item Type','Pricing Tier','Design Details','Review & Submit'];
+  let curStep=1;
+  let selectedItem='', selectedTier='', itemCondition='new', inspPhotos=[];
+
+ // Build item grid from API
+  let allItems = [];
+  let liveTiers = [];
+
+  (async () => {
+    const res = await apiFetch('/api/items');
+    allItems = (res && res.ok && Array.isArray(res.data)) ? res.data : [];
+    document.getElementById('itemGrid').innerHTML = allItems.length
+      ? allItems.map(it => `
+          <div class="item-card" onclick="selItem('${it.label}', this, ${it.id})">
+            <div class="item-icon">${it.icon}</div>
+            <div class="item-lbl">${it.label}</div>
+          </div>`).join('')
+      : '<div style="color:var(--txt-d);font-size:13px;">No items available.</div>';
+  })();
+  
+  // Condition toggle
+  document.querySelectorAll('input[name="cond"]').forEach(r=>r.addEventListener('change',function(){
+    itemCondition=this.value;
+    document.getElementById('cleanFeeNote').style.display=itemCondition==='preloved'?'block':'none';
+  }));
+
+  function buildStepsNav() {
+    document.getElementById('stepsNav').innerHTML=STEPS.map((s,i)=>`
+      <div class="step-pill">
+        <div class="snb ${curStep>i+1?'done':curStep===i+1?'active':''}">${curStep>i+1?'✓':i+1}</div>
+        <span class="sntxt ${curStep===i+1?'active':''}">${s}</span>
+        ${i<STEPS.length-1?`<div class="snconn ${curStep>i+1?'done':''}"></div>`:''}
+      </div>`).join('');
+  }
+
+  function goStep(n) {
+    document.querySelectorAll('.step-page').forEach(p=>p.classList.remove('show'));
+    document.getElementById('step'+n).classList.add('show');
+    curStep=n;
+    buildStepsNav();
+    window.scrollTo({top:0,behavior:'smooth'});
+  }
+
+  function nextStep(to) {
+    if(curStep===1&&!selectedItem){showToast('Please select an item type.','warning');return;}
+    if(curStep===2&&!selectedTier){showToast('Please select a pricing tier.','warning');return;}
+    if(curStep===3){
+      const dn=document.getElementById('designNotes').value.trim();
+      if(!dn){showToast('Please describe your design vision.','warning');return;}
+    }
+    if(to===4) buildReview();
+    goStep(to);
+  }
+
+  function selItem(label, el, itemId) {
+    selectedItem = label;
+    document.querySelectorAll('.item-card').forEach(c => c.classList.remove('sel'));
+    el.classList.add('sel');
+    // Load tiers for this item
+    liveTiers = [];
+    selectedTier = '';
+    document.getElementById('tierGrid').innerHTML = '<div style="color:var(--txt-d);font-size:13px;padding:10px 0;">Loading tiers...</div>';
+    apiFetch('/api/items').then(res => {
+      const items = (res && res.ok && Array.isArray(res.data)) ? res.data : [];
+      const item = items.find(i => i.id === itemId);
+      liveTiers = (item && item.tiers) ? item.tiers : [];
+      document.getElementById('tierGrid').innerHTML = liveTiers.length
+        ? liveTiers.map(t => `
+            <div class="tier-card" id="tc_${t.id}" onclick="selTierLive(${t.id}, this)">
+              <div class="tier-lbl">${t.name}</div>
+              <div class="tier-price">${t.price_label || ''}</div>
+              <div class="tier-desc">${t.description || ''}</div>
+            </div>`).join('')
+        : '<div style="color:var(--txt-d);font-size:13px;padding:10px 0;">No pricing tiers set up for this item yet.</div>';
+    });
+  }
+
+  function selTierLive(id, el) {
+    selectedTier = id;
+    document.querySelectorAll('.tier-card').forEach(c => c.classList.remove('sel'));
+    el.classList.add('sel');
+  }
+
+  function toggleRush(){
+    document.getElementById('rushDateWrap').style.display=document.getElementById('isRush').checked?'block':'none';
+  }
+
+  function addInspPhotos(e){
+    Array.from(e.target.files).forEach(f=>{
+      const r=new FileReader();
+      r.onload=ev=>{ inspPhotos.push(ev.target.result); renderInspGal(); };
+      r.readAsDataURL(f);
+    });
+    e.target.value='';
+  }
+
+  function renderInspGal(){
+    const el=document.getElementById('inspGal');
+    el.innerHTML=inspPhotos.map((s,i)=>`
+      <div class="gthumb"><img src="${s}"/>
+        <button class="gdel" onclick="inspPhotos.splice(${i},1);renderInspGal()">✕</button>
+      </div>`).join('');
+  }
+
+  function buildReview(){
+    const isRush=document.getElementById('isRush').checked;
+    const wantsPhoto=document.getElementById('wantsPhoto').checked;
+    const mhb=document.getElementById('mustHaveBy').value;
+    const wantsConsult=document.getElementById('wantsConsult').checked;
+    const tier = liveTiers.find(t => t.id === selectedTier) || {};
+    document.getElementById('reviewCard').innerHTML=`
+      <div class="review-row"><span style="color:var(--txt-m);">Item</span><strong>${selectedItem}</strong></div>
+      <div class="review-row"><span style="color:var(--txt-m);">Condition</span><span style="text-transform:capitalize;">${itemCondition==='preloved'?'Pre-loved + $25 cleaning fee':'New / unworn'}</span></div>
+      <div class="review-row"><span style="color:var(--txt-m);">Pricing Tier</span><strong style="text-transform:capitalize;">${tier.name || selectedTier} — ${tier.price_label || ''}</strong></div>
+      ${isRush?`<div class="review-row"><span style="color:var(--warn);">⚡ Rush</span><span style="color:var(--warn);">${mhb?'Must have by '+formatDate(mhb):'Date TBD'} — 50% rush fee</span></div>`:''}
+      ${wantsPhoto?`<div class="review-row"><span style="color:var(--txt-m);">📸 AI Photography</span><span style="color:var(--gld);">$35 add-on</span></div>`:''}
+      <div class="review-row"><span style="color:var(--txt-m);">Consult Call</span><span>${wantsConsult?'Requested':'Not requested'}</span></div>
+      <div class="review-row"><span style="color:var(--txt-m);">Ref Photos</span><span>${inspPhotos.length} uploaded</span></div>
+      <div class="review-row"><span style="color:var(--txt-m);">Design Notes</span><span style="font-family:var(--fb);font-style:italic;max-width:240px;text-align:right;">${document.getElementById('designNotes').value.slice(0,80)}${document.getElementById('designNotes').value.length>80?'...':''}</span></div>
+      <div class="review-row" style="border:none;padding-top:14px;"><span style="color:var(--txt-m);">First Payment Due</span><strong style="color:var(--gld);">$50 booking fee (when you're ready to lock your spot)</strong></div>`;
+  }
+
+  async function submitOrder(){
+    const btn=document.getElementById('submitBtn');
+    btn.disabled=true;
+    document.getElementById('sp').style.display='block';
+    document.getElementById('submitTxt').textContent='Submitting...';
+
+    const isRush=document.getElementById('isRush').checked;
+    const mhb=document.getElementById('mustHaveBy').value;
+    const wantsConsult=document.getElementById('wantsConsult').checked;
+    const wantsPhoto=document.getElementById('wantsPhoto').checked;
+    const designNotes=document.getElementById('designNotes').value.trim();
+    const extraNotes=document.getElementById('extraNotes').value.trim();
+
+    const payload = {
+      item_type:        selectedItem,
+      pricing_tier:     (liveTiers.find(t => t.id === selectedTier) || {}).name || selectedTier,
+      is_rush:          isRush,
+      must_have_by:     mhb || null,
+      customer_notes:   [designNotes, extraNotes].filter(Boolean).join('\n\n'),
+      wants_consult:    wantsConsult,
+      has_cleaning_fee: itemCondition === 'preloved',
+    };
+
+    const result = await apiFetch('/api/orders', {
+      method: 'POST',
+      body: JSON.stringify(payload),
+    });
+
+    if (result && result.ok) {
+      const orderId = result.data.order.id;
+      document.getElementById('newOrderId').textContent = 'Your Order #' + orderId + ' has been submitted.';
+
+      // Upload reference photos to the API
+      if (inspPhotos.length > 0) {
+        document.getElementById('submitTxt').textContent = 'Saving photos...';
+        for (const photoBase64 of inspPhotos) {
+          try {
+            await apiFetch('/api/orders/' + orderId + '/images', {
+              method: 'POST',
+              body: JSON.stringify({ url: photoBase64, type: 'reference' }),
+            });
+          } catch(e) {
+            console.warn('Photo upload failed:', e);
+          }
+        }
+      }
+
+      // If AI Photography add-on selected, add it to the order
+      if (wantsPhoto) {
+        await apiFetch('/api/add_ons', {
+          method: 'POST',
+          body: JSON.stringify({ order_id: orderId, name: 'AI Product Photography', price: 35.00, quantity: 1 }),
+        });
+      }
+
+      goStep(5);
+    } else {
+      const errMsg = result?.data?.error || 'Failed to submit order. Please try again.';
+      showToast(errMsg, 'error');
+      btn.disabled = false;
+      document.getElementById('sp').style.display = 'none';
+      document.getElementById('submitTxt').textContent = 'Submit Order to Waitlist ✓';
+    }
+  }
+
+  // Init
+  buildStepsNav();
+  goStep(1);
+</script>
+</body>
+</html>

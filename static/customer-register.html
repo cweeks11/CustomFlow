@@ -1,0 +1,211 @@
+<!--
+  PAGE: Customer Registration (customer-register.html)
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Create Account — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <script src="https://www.google.com/recaptcha/api.js" async defer></script>
+  <style>
+    body{display:flex;min-height:100vh;overflow-x:hidden;}
+    .lp{width:36%;background:var(--s1);border-right:1px solid var(--b1);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;position:relative;overflow:hidden;}
+    .lp::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 40% 50%,rgba(242,23,165,0.05) 0%,transparent 60%);}
+    .rp{flex:1;display:flex;align-items:center;justify-content:center;padding:60px 52px;overflow-y:auto;}
+    .brand{text-align:center;z-index:1;}
+    .brand img{width:240px;max-width:90%;margin-bottom:24px;mix-blend-mode:lighten;display:block;margin-left:auto;margin-right:auto;}
+    .bl{width:60px;height:1px;background:linear-gradient(to right,transparent,var(--gld-d),transparent);margin:0 auto 20px;}
+    .steps-list{text-align:left;width:100%;margin-top:8px;}
+    .sl-item{display:flex;align-items:flex-start;gap:10px;margin-bottom:14px;}
+    .sl-n{width:20px;height:20px;border-radius:50%;background:var(--mg);color:#fff;font-size:10px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:1px;}
+    .sl-txt{font-size:12px;color:var(--txt-m);line-height:1.5;}
+    .sl-txt strong{color:var(--txt);display:block;font-size:10px;letter-spacing:1px;text-transform:uppercase;margin-bottom:2px;}
+    .box{width:100%;max-width:460px;}
+    .sec-div{font-size:10px;font-weight:700;letter-spacing:2px;text-transform:uppercase;color:var(--txt-d);margin:20px 0 14px;padding-bottom:8px;border-bottom:1px solid var(--b1);}
+    .agreed-row{display:flex;align-items:flex-start;gap:10px;padding:12px 14px;background:rgba(242,23,165,0.05);border:1px solid rgba(242,23,165,0.15);border-radius:6px;margin-bottom:16px;}
+    .clink{text-align:center;font-size:12px;color:var(--txt-m);margin-top:18px;}
+    .clink a{color:var(--mg);text-decoration:none;font-weight:600;}
+    @media(max-width:768px){.lp{display:none;}.rp{padding:40px 24px;}}
+  </style>
+</head>
+<body>
+<div class="lp"><div class="brand">
+  <img src="logo_white_transparent.png" alt="Cope Aesthetic Customs"/>
+  <div class="bl"></div>
+  <div class="steps-list">
+    <div class="sl-item"><div class="sl-n">1</div><div class="sl-txt"><strong>Create Account</strong>Set up your profile</div></div>
+    <div class="sl-item"><div class="sl-n">2</div><div class="sl-txt"><strong>Submit Order</strong>Tell Buffy your vision</div></div>
+    <div class="sl-item"><div class="sl-n">3</div><div class="sl-txt"><strong>Free Waitlist</strong>Get quoted, pay booking fee</div></div>
+    <div class="sl-item"><div class="sl-n">4</div><div class="sl-txt"><strong>Production Queue</strong>Buffy starts your piece</div></div>
+    <div class="sl-item"><div class="sl-n">5</div><div class="sl-txt"><strong>Track Progress</strong>Watch it come to life</div></div>
+  </div>
+</div></div>
+
+<div class="rp"><div class="box">
+  <div style="font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--mg);margin-bottom:10px;">Join Us</div>
+  <div style="font-size:28px;font-weight:700;letter-spacing:2px;text-transform:uppercase;line-height:1;margin-bottom:6px;">Create Account</div>
+  <div style="font-size:14px;color:var(--txt-m);margin-bottom:24px;">Start your custom order journey with Buffy</div>
+  <div class="err-box" id="err"></div>
+
+  <div class="sec-div">Personal Info</div>
+  <div class="g2">
+    <div class="fg"><label class="fl">First Name</label><input type="text" class="fc" id="fn" placeholder="James"/></div>
+    <div class="fg"><label class="fl">Last Name</label><input type="text" class="fc" id="ln" placeholder="Carter"/></div>
+  </div>
+  <div class="fg"><label class="fl">Email Address</label><input type="email" class="fc" id="email" placeholder="you@email.com"/></div>
+  <div class="fg"><label class="fl">Phone Number</label><input type="tel" class="fc" id="phone" placeholder="(803) 555-0000"/></div>
+
+  <div class="sec-div">Notification Preferences</div>
+  <div style="display:flex;gap:20px;margin-bottom:16px;">
+    <label style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--txt-m);cursor:pointer;"><input type="checkbox" id="notifEmail" checked style="accent-color:var(--mg);"/> Email updates</label>
+  </div>
+
+  <div class="sec-div">Account Type</div>
+  <div style="font-size:12px;color:var(--txt-m);margin-bottom:12px;line-height:1.5;">Select the type that best describes you. You can always change this later in Settings.</div>
+  <div id="regAcctTypeOptions" style="display:flex;flex-direction:column;gap:8px;margin-bottom:8px;"></div>
+  <div id="influencerNote" style="display:none;font-size:12px;color:var(--gld-d);background:rgba(216,188,132,0.08);border:1px solid rgba(216,188,132,0.25);border-radius:6px;padding:10px 12px;margin-bottom:16px;line-height:1.5;">⭐ Influencer accounts require Buffy's approval after you register. You'll receive an email once reviewed.</div>
+
+  <div class="sec-div">Security</div>
+  <div class="g2">
+    <div class="fg"><label class="fl">Password</label><input type="password" class="fc" id="pw" placeholder="Min. 6 characters"/></div>
+    <div class="fg"><label class="fl">Confirm Password</label><input type="password" class="fc" id="cpw" placeholder="••••••••"/></div>
+  </div>
+
+  <div class="agreed-row">
+    <span style="color:var(--ok);font-size:16px;margin-top:1px;">✓</span>
+    <span style="font-size:12px;color:var(--txt-m);line-height:1.5;">You have read and agreed to the <a href="customer-terms.html" style="color:var(--mg);">Terms & Conditions, Pricing & FAQs</a>. <a href="customer-terms.html" style="color:var(--txt-d);font-size:11px;">Read again →</a></span>
+  </div>
+
+  <div style="margin-bottom:16px;" id="captchaWrap">
+    <div class="g-recaptcha" data-sitekey="6Lf5XbksAAAAALnJkYS7pzHKf70dP-OUOjiL3K_s" data-theme="dark"></div>
+  </div>
+
+  <button class="btn btn-mg" style="width:100%;padding:13px;font-size:12px;justify-content:center;" id="regBtn" onclick="doRegister()">
+    <div class="spin-sm" id="sp"></div><span id="bt">Create Account</span>
+  </button>
+  <div class="clink">Already have an account? <a href="customer-login.html">Sign in →</a></div>
+</div></div>
+
+<script src="core.js"></script>
+<script>
+  const REG_TYPES = [
+    { val: 'individual',   label: 'Individual',            desc: 'Standard — personal custom orders' },
+    { val: 'influencer',   label: '⭐ Influencer',         desc: "Content creator — requires Buffy's approval" },
+    { val: 'group',        label: '👥 Group / Collective', desc: 'Team, squad, or group event' },
+    { val: 'nonprofit',    label: '🤝 Non-Profit',         desc: 'Non-profit or charity' },
+    { val: 'organization', label: '🏢 Organization',       desc: 'Business, brand, or corporate' },
+  ];
+  document.getElementById('regAcctTypeOptions').innerHTML = REG_TYPES.map(t => `
+    <label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--b1);border-radius:7px;cursor:pointer;" id="regTypeOpt_${t.val}">
+      <input type="radio" name="regAcctType" value="${t.val}" style="accent-color:var(--mg);width:14px;height:14px;" onchange="highlightRegType('${t.val}')" ${t.val==='individual'?'checked':''}/>
+      <div>
+        <div style="font-size:12px;font-weight:700;color:var(--txt);">${t.label}</div>
+        <div style="font-size:11px;color:var(--txt-m);">${t.desc}</div>
+      </div>
+    </label>`).join('');
+  highlightRegType('individual');
+
+  function highlightRegType(type) {
+    REG_TYPES.forEach(t => {
+      const el = document.getElementById('regTypeOpt_' + t.val);
+      if (el) {
+        el.style.borderColor = t.val === type ? 'var(--mg)' : 'var(--b1)';
+        el.style.background  = t.val === type ? 'rgba(242,23,165,0.04)' : '';
+      }
+    });
+    const note = document.getElementById('influencerNote');
+    if (note) note.style.display = type === 'influencer' ? 'block' : 'none';
+  }
+
+  async function doRegister() {
+    const fn    = document.getElementById('fn').value.trim();
+    const ln    = document.getElementById('ln').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const pw    = document.getElementById('pw').value;
+    const cpw   = document.getElementById('cpw').value;
+    const err   = document.getElementById('err');
+    err.classList.remove('show');
+
+    if (!fn||!ln||!email||!pw) { err.textContent='Please fill in all required fields.'; err.classList.add('show'); return; }
+    if (pw !== cpw)            { err.textContent='Passwords do not match.';             err.classList.add('show'); return; }
+    if (pw.length < 6)         { err.textContent='Password must be at least 6 characters.'; err.classList.add('show'); return; }
+    if (sessionStorage.getItem('terms_agreed') !== 'true') {
+      err.textContent = 'You must read and agree to the Terms & Conditions first. Redirecting...';
+      err.classList.add('show');
+      setTimeout(() => window.location.href = 'customer-terms.html', 1800); return;
+    }
+
+    let captchaToken = '';
+    try { captchaToken = grecaptcha.getResponse(); } catch(e) {}
+    if (!captchaToken) {
+      err.textContent = 'Please complete the "I\'m not a robot" check.';
+      err.classList.add('show');
+      return;
+    }
+
+    const btn = document.getElementById('regBtn');
+    btn.disabled = true;
+    document.getElementById('sp').style.display = 'block';
+    document.getElementById('bt').textContent = 'Creating account...';
+
+    try {
+      const res = await fetch('/api/register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name:          fn + ' ' + ln,
+          email:         email,
+          password:      pw,
+          phone:         document.getElementById('phone').value.trim(),
+          notify_email:  document.getElementById('notifEmail').checked,
+          captcha_token: captchaToken,
+          customer_type: (document.querySelector('input[name="regAcctType"]:checked') || {}).value || 'individual',
+        })
+      });
+
+      // Try to parse JSON — if it fails, show the raw status
+      let data;
+      try {
+        data = await res.json();
+      } catch(jsonErr) {
+        err.textContent = 'Server error (status ' + res.status + '). Please try again or contact Buffy.';
+        err.classList.add('show');
+        btn.disabled = false;
+        document.getElementById('sp').style.display = 'none';
+        document.getElementById('bt').textContent = 'Create Account';
+        try { grecaptcha.reset(); } catch(e) {}
+        return;
+      }
+
+      if (res.ok) {
+        localStorage.setItem('customer_token', data.token);
+        localStorage.setItem('customer_user', JSON.stringify(data.user));
+        sessionStorage.removeItem('terms_agreed');
+        if (data.user.customer_type === 'influencer') {
+          window.location.href = 'customer-pending.html';
+        } else {
+          window.location.href = 'customer-portal.html';
+        }
+      } else {
+        err.textContent = data.error || 'Registration failed. Please try again.';
+        err.classList.add('show');
+        btn.disabled = false;
+        document.getElementById('sp').style.display = 'none';
+        document.getElementById('bt').textContent = 'Create Account';
+        try { grecaptcha.reset(); } catch(e) {}
+      }
+    } catch(e) {
+      // Network-level failure — show the actual error message for debugging
+      err.textContent = 'Connection error: ' + (e.message || 'unknown. Please try again.');
+      err.classList.add('show');
+      btn.disabled = false;
+      document.getElementById('sp').style.display = 'none';
+      document.getElementById('bt').textContent = 'Create Account';
+      try { grecaptcha.reset(); } catch(e) {}
+    }
+  }
+</script>
+<div class="toast" id="toast"></div>
+</body>
+</html>

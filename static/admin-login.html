@@ -1,0 +1,141 @@
+<!--
+  PAGE: Admin Login (index.html)
+  ============================================================
+  PURPOSE:
+    The entry point for the admin portal. Buffy (and any employees)
+    sign in here to access the dashboard, orders, reports, and settings.
+
+  WHAT'S ON THIS PAGE:
+    Left panel — Cope Aesthetic Customs logo + brand quote (decorative)
+    Right panel — email/password login form
+
+  MOCK CREDENTIALS (development only):
+    Email:    admin@copeaesthetic.com
+    Password: admin123
+
+  KEY LOGIC:
+    doLogin()     — validates credentials against the mock user list,
+                    saves admin_token and admin_user to localStorage,
+                    redirects to admin-dashboard.html on success.
+                    In production: POST /api/login  { email, password }
+                    Response: { token: 'jwt...', user: { name, email, role } }
+
+  AUTH CHECK:
+    If admin_token already exists in localStorage, skips the login
+    form entirely and redirects straight to admin-dashboard.html.
+    This means already-logged-in admins don't see the login screen.
+
+  BACKEND TODO:
+    doLogin()  → POST /api/login
+                 On success: save response.token to localStorage as 'admin_token'
+                 On failure: show error message from response.message
+  ============================================================
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>Admin Login — Cope Aesthetic Customs</title>
+  <link rel="stylesheet" href="styles.css"/>
+  <style>
+    body{display:flex;min-height:100vh;overflow:hidden;}
+    .lp{width:46%;background:var(--s1);border-right:1px solid var(--b1);display:flex;flex-direction:column;align-items:center;justify-content:center;padding:60px;position:relative;overflow:hidden;}
+    .lp::before{content:'';position:absolute;inset:0;background:radial-gradient(ellipse at 40% 50%,rgba(242,23,165,0.05) 0%,transparent 60%);}
+    .rp{flex:1;display:flex;align-items:center;justify-content:center;padding:60px 52px;}
+    .brand{text-align:center;z-index:1;}
+    .brand img{width:300px;max-width:90%;margin-bottom:28px;filter:drop-shadow(0 0 30px rgba(242,23,165,0.15));mix-blend-mode:lighten;display:block;margin-left:auto;margin-right:auto;}
+    .brand-line{width:60px;height:1px;background:linear-gradient(to right,transparent,var(--gld-d),transparent);margin:0 auto 20px;}
+    .brand-q{font-family:var(--fb);font-style:italic;font-size:16px;color:rgba(240,237,232,0.4);line-height:1.6;max-width:260px;text-align:center;}
+    .chip{margin-top:32px;display:inline-block;font-size:9px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--gld);border:1px solid var(--gld-d);padding:5px 16px;border-radius:2px;}
+    .box{width:100%;max-width:380px;}
+    .ey{font-size:10px;font-weight:700;letter-spacing:3px;text-transform:uppercase;color:var(--mg);margin-bottom:10px;}
+    .ttl{font-size:30px;font-weight:700;letter-spacing:2px;text-transform:uppercase;line-height:1;margin-bottom:6px;}
+    .sub{font-size:14px;color:var(--txt-m);margin-bottom:32px;}
+    .divrow{display:flex;align-items:center;gap:12px;margin:20px 0;}
+    .divrow span{height:1px;flex:1;background:var(--b1);}
+    .divrow p{font-size:10px;letter-spacing:2px;color:var(--txt-d);text-transform:uppercase;}
+    .clink{text-align:center;font-size:12px;color:var(--txt-m);}
+    .clink a{color:var(--mg);text-decoration:none;font-weight:600;}
+    @media(max-width:768px){.lp{display:none;}.rp{padding:40px 24px;}}
+  </style>
+</head>
+<body>
+<div class="lp">
+  <div class="brand">
+    <img src="logo_gold_transparent.png" alt="Cope Aesthetic Customs"/>
+    <div class="brand-line"></div>
+    <div class="brand-q">"I paint one-of-ones that turn your story, fandom, or vibe into wearable art."</div>
+    <div class="chip">Admin Portal</div>
+  </div>
+</div>
+<div class="rp">
+  <div class="box">
+    <div class="ey">Welcome Back</div>
+    <div class="ttl">Admin Sign In</div>
+    <div class="sub">Access your store management dashboard</div>
+    <div class="err-box" id="err"></div>
+    <div class="fg"><label class="fl">Email Address</label><input type="email" class="fc" id="email" placeholder="admin@copeaesthetic.com" autocomplete="email"/></div>
+    <div class="fg"><label class="fl">Password</label><input type="password" class="fc" id="pw" placeholder="••••••••" autocomplete="current-password"/></div>
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:24px;">
+      <label style="display:flex;align-items:center;gap:7px;font-size:12px;color:var(--txt-m);cursor:pointer;"><input type="checkbox" style="accent-color:var(--mg);"/> Remember me</label>
+      <a href="#" style="font-size:12px;color:var(--chr);text-decoration:none;">Forgot password?</a>
+    </div>
+    <button class="btn btn-mg" style="width:100%;padding:13px;font-size:12px;justify-content:center;" id="loginBtn" onclick="doLogin()">
+      <div class="spin-sm" id="sp"></div><span id="bt">Sign In</span>
+    </button>
+    <div class="divrow"><span></span><p>or</p><span></span></div>
+    <div class="clink">Customer portal? <a href="customer-login.html">Sign in here →</a></div>
+  </div>
+</div>
+<script src="core.js"></script>
+<script>
+  if(localStorage.getItem('admin_token')) window.location.href='admin-dashboard.html';
+  document.addEventListener('keydown',e=>{if(e.key==='Enter')doLogin();});
+
+  async function doLogin(){
+    const email=document.getElementById('email').value.trim();
+    const pw=document.getElementById('pw').value;
+    const err=document.getElementById('err');
+    err.classList.remove('show');
+    if(!email||!pw){err.textContent='Please enter your email and password.';err.classList.add('show');return;}
+    const btn=document.getElementById('loginBtn');
+    btn.disabled=true;
+    document.getElementById('sp').style.display='block';
+    document.getElementById('bt').textContent='Signing in...';
+    // Call real Flask API
+    try {
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password: pw })
+      });
+      const data = await res.json();
+      if (res.ok && (data.user.role === 'owner' || data.user.role === 'employee')) {
+        localStorage.setItem('admin_token', data.token);
+        localStorage.setItem('admin_user', JSON.stringify(data.user));
+        window.location.href = 'admin-dashboard.html';
+      } else if (res.ok) {
+        err.textContent = 'This account does not have admin access.';
+        err.classList.add('show');
+        btn.disabled=false;
+        document.getElementById('sp').style.display='none';
+        document.getElementById('bt').textContent='Sign In';
+      } else {
+        err.textContent = data.error || 'Invalid credentials.';
+        err.classList.add('show');
+        btn.disabled=false;
+        document.getElementById('sp').style.display='none';
+        document.getElementById('bt').textContent='Sign In';
+      }
+    } catch(e) {
+      err.textContent = 'Could not connect to server. Please try again.';
+      err.classList.add('show');
+      btn.disabled=false;
+      document.getElementById('sp').style.display='none';
+      document.getElementById('bt').textContent='Sign In';
+    }
+  }
+</script>
+<div class="toast" id="toast"></div>
+</body>
+</html>
